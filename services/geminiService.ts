@@ -6,36 +6,46 @@ const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 /**
  * Utiliti untuk membalut URL dengan proxy bagi memintas sekatan CORS.
  * Diperlukan untuk preview video dan muat turun fail dari domain luar.
- * Kami juga selitkan API KEY ke dalam URL asal supaya server benarkan akses.
  */
 export const getProxiedUrl = (url: string | null | undefined): string => {
   if (!url) return '';
-  // Jika URL sudah merupakan data base64 atau blob, pulangkan terus
-  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  
+  // Jika URL start dengan blob:http (format dari geminigen/SCF), 
+  // kita buang 'blob:' supaya proxy boleh fetch pautan asal.
+  let cleanUrl = url;
+  if (url.startsWith('blob:http')) {
+    cleanUrl = url.replace(/^blob:/, '');
+  }
+  
+  // Jika URL adalah data base64 atau blob local browser yang sah, pulangkan terus
+  if (cleanUrl.startsWith('data:') || (cleanUrl.startsWith('blob:') && !url.startsWith('http'))) {
+    return cleanUrl;
+  }
   
   try {
-    const targetUrl = new URL(url);
-    // Masukkan api_key ke dalam query param URL asal jika belum ada
+    const targetUrl = new URL(cleanUrl);
+    // Masukkan api_key supaya server benarkan akses resource
     if (!targetUrl.searchParams.has('api_key') && !targetUrl.searchParams.has('key')) {
       targetUrl.searchParams.set('api_key', GEMINIGEN_KEY);
+      targetUrl.searchParams.set('key', GEMINIGEN_KEY);
     }
     
     // Gunakan corsproxy.io untuk bypass CORS
+    // Kita encode URL penuh supaya proxy boleh baca query params dalam URL asal
     return `https://corsproxy.io/?${encodeURIComponent(targetUrl.toString())}`;
   } catch (e) {
-    // Fallback jika URL parsing gagal
-    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    // Fallback jika URL parsing gagal, cuba append api_key secara manual
+    const separator = cleanUrl.includes('?') ? '&' : '?';
+    const finalUrl = `${cleanUrl}${separator}api_key=${GEMINIGEN_KEY}&key=${GEMINIGEN_KEY}`;
+    return `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`;
   }
 };
 
 /**
  * Standardized fetch helper refined for maximum CORS compatibility.
- * Uses a CORS proxy for geminigen.ai requests to bypass browser restrictions.
  */
 async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 2) {
   const urlObj = new URL(url);
-  
-  // Ensure authentication is present in query string. 
   urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
   urlObj.searchParams.set('key', GEMINIGEN_KEY);
   urlObj.searchParams.set('_t', Date.now().toString());
@@ -60,13 +70,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 
       } catch (e) {
         errorData = {};
       }
-      
-      const msg = errorData?.detail?.message || 
-                  errorData?.message || 
-                  errorData?.detail || 
-                  `API Error: ${response.status}`;
-                  
-      throw new Error(msg);
+      throw new Error(errorData?.message || `API Error: ${response.status}`);
     }
     return await response.json();
   } catch (err: any) {
@@ -98,20 +102,18 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}&key=${GEMINIGEN_KEY}`;
+  const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
   const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
   
   const response = await fetch(proxiedUrl, {
     method: 'POST',
-    headers: {
-      'x-api-key': GEMINIGEN_KEY
-    },
+    headers: { 'x-api-key': GEMINIGEN_KEY },
     body: formData
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.detail?.message || `Gagal mulakan generation: ${response.status}`);
+    throw new Error(errorData?.message || `Gagal mulakan: ${response.status}`);
   }
   return response.json();
 };
@@ -161,9 +163,7 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
-    config: {
-      imageConfig: { aspectRatio }
-    }
+    config: { imageConfig: { aspectRatio } }
   });
   
   const candidates = response.candidates;
@@ -200,23 +200,20 @@ export const fetchVideoContent = async (uri: string) => {
   const url = new URL(uri);
   url.searchParams.set('key', process.env.API_KEY);
   const response = await fetch(url.toString());
-  if (!response.ok) throw new Error(`Gagal memuat turun video: ${response.status}`);
   const blob = await response.blob();
   return URL.createObjectURL(blob);
 };
 
 export function encodeBase64(bytes: Uint8Array) {
   let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
 export function decodeBase64(base64: string) {
   const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
   return bytes;
 }
 

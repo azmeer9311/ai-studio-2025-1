@@ -12,19 +12,17 @@ const HistoryView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetching a larger batch to ensure we find content
       const data = await getAllHistory(1, 100);
-      
       const items = data?.result || data?.data || (Array.isArray(data) ? data : []);
       
       if (items && Array.isArray(items)) {
-        // Filter for video-related items or items with results
+        // Tapis sejarah untuk dapatkan item video sahaja
+        // Kita guna logik lebih luas untuk pastikan tiada video tercicir
         const videoHistory = items.filter((item: any) => 
-          item.type === 'video' || 
-          item.type === 'video_generation' ||
+          item.type?.toLowerCase().includes('video') || 
           (item.model_name && item.model_name.toLowerCase().includes('sora')) ||
           (item.generated_video && item.generated_video.length > 0) ||
-          (item.generate_result && typeof item.generate_result === 'string' && item.generate_result.includes('http'))
+          (item.generate_result && typeof item.generate_result === 'string' && (item.generate_result.includes('http') || item.generate_result.includes('blob:')))
         );
         setHistory(videoHistory);
       } else {
@@ -43,10 +41,10 @@ const HistoryView: React.FC = () => {
     
     setDownloadingUuid(uuid);
     try {
-      // Kami ambil blob melalui proxy untuk elak CORS dan mudahkan user save file
+      // Ambil file blob melalui proxy untuk elak CORS isu
       const proxiedUrl = getProxiedUrl(url);
       const response = await fetch(proxiedUrl);
-      if (!response.ok) throw new Error("Gagal mengambil data video dari server.");
+      if (!response.ok) throw new Error("Gagal muat turun fail dari server digital.");
       
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
@@ -58,7 +56,7 @@ const HistoryView: React.FC = () => {
       link.click();
       document.body.removeChild(link);
       
-      // Cleanup blob url memory
+      // Cleanup
       setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     } catch (e: any) {
       console.error("Download error:", e);
@@ -87,13 +85,13 @@ const HistoryView: React.FC = () => {
     switch (s) {
       case 1: return 'Tengah Render';
       case 2: return 'Dah Siap';
-      case 3: return 'Gagal Teruk';
-      default: return 'Sedang Proses';
+      case 3: return 'Gagal';
+      default: return 'Proses';
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#020617] p-4 md:p-12 overflow-y-auto custom-scrollbar">
+    <div className="flex flex-col h-full bg-[#020617] p-4 md:p-12 overflow-y-auto custom-scrollbar text-slate-200">
       <div className="max-w-7xl mx-auto w-full">
         <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
@@ -102,7 +100,7 @@ const HistoryView: React.FC = () => {
               <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.3em]">Arkib Azmeer AI</p>
             </div>
             <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter uppercase">Vault <span className="text-slate-700">Video</span></h2>
-            <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mt-2">Semua video Sora hampa yang padu ada kat sini</p>
+            <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mt-2">Arkib video Sora yang telah hampa hasilkan</p>
           </div>
           <button 
             onClick={fetchHistory}
@@ -112,7 +110,7 @@ const HistoryView: React.FC = () => {
             <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Kemaskini Arkib
+            Sync Arkib
           </button>
         </header>
 
@@ -122,38 +120,45 @@ const HistoryView: React.FC = () => {
               <div className="absolute inset-0 border-4 border-cyan-500/10 rounded-full"></div>
               <div className="absolute inset-0 border-4 border-t-cyan-500 rounded-full animate-spin"></div>
             </div>
-            <p className="text-[10px] font-black text-white uppercase tracking-widest">Menyemak Arkib Video...</p>
+            <p className="text-[10px] font-black text-white uppercase tracking-widest">Menyemak Pangkalan Data Arkib...</p>
           </div>
         ) : error ? (
           <div className="text-center py-40 bg-rose-500/5 rounded-[3rem] border border-rose-500/20 flex flex-col items-center gap-6">
-            <p className="text-rose-500 font-black uppercase tracking-widest">Gagal Capai Arkib</p>
+            <p className="text-rose-500 font-black uppercase tracking-widest">Ralat Capaian Arkib</p>
             <p className="text-xs text-slate-400 mt-4 font-bold">{error}</p>
             <button onClick={fetchHistory} className="mt-8 px-8 py-3 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest">Cuba Lagi</button>
           </div>
         ) : history.length === 0 ? (
           <div className="text-center py-40 bg-[#0f172a]/30 rounded-[3rem] border border-slate-800/50 flex flex-col items-center gap-6">
-            <p className="text-slate-500 font-black uppercase tracking-widest">Tiada rekod video dijumpai</p>
+            <p className="text-slate-500 font-black uppercase tracking-widest">Tiada rekod video dijumpai dalam arkib</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-20">
             {history.map((item) => {
-              // Extraction logic yang lebih kukuh untuk cari URL video
+              // Pengekstrakan URL video yang sangat agresif untuk atasi masalah 'blob:' dan CORS
+              const videoObj = (item.generated_video && item.generated_video.length > 0) ? item.generated_video[0] : null;
+              
+              // Cuba cari URL dalam semua kemungkinan field
               const rawVideoUrl = 
-                (item.generated_video && item.generated_video.length > 0 ? item.generated_video[0].video_url : null) || 
-                item.generate_result || 
+                videoObj?.video_url || 
+                (typeof item.generate_result === 'string' ? item.generate_result : '') || 
                 (item as any).video_url || 
+                (item as any).url ||
                 '';
 
-              const isCompleted = Number(item.status) === 2 || (item as any).status_desc === 'completed';
-              const hasVideo = rawVideoUrl.length > 5 && rawVideoUrl.startsWith('http');
-              const videoUrl = hasVideo ? getProxiedUrl(rawVideoUrl) : '';
+              // Jika ada URL (http atau blob), kita anggap video tersedia untuk dipaparkan
+              const hasVideoLink = rawVideoUrl && (rawVideoUrl.includes('http') || rawVideoUrl.includes('blob:'));
+              
+              // Gunakan proxy URL untuk playback lancar
+              const videoSrc = hasVideoLink ? getProxiedUrl(rawVideoUrl) : '';
               
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/40 border border-slate-800/60 rounded-[2.5rem] overflow-hidden flex flex-col hover:border-cyan-500/30 transition-all duration-500 relative">
                   <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
-                    {hasVideo && isCompleted ? (
+                    {/* Render video terus jika link ada, walaupun status belum '2' (Sebab data sync kadang slow) */}
+                    {hasVideoLink ? (
                       <video 
-                        src={videoUrl} 
+                        src={videoSrc} 
                         className="w-full h-full object-cover"
                         controls
                         muted
@@ -176,7 +181,7 @@ const HistoryView: React.FC = () => {
                           </div>
                         )}
                         {Number(item.status) === 3 && (
-                          <p className="text-[10px] text-rose-500 font-bold px-4 text-center leading-relaxed">{item.error_message || "Ralat berlaku semasa penjanaan video."}</p>
+                          <p className="text-[10px] text-rose-500 font-bold px-4 text-center leading-relaxed">{item.error_message || "Penjanaan video gagal."}</p>
                         )}
                       </div>
                     )}
@@ -193,7 +198,7 @@ const HistoryView: React.FC = () => {
                       <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
                         {new Date(item.created_at).toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </span>
-                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">ID: {item.id}</span>
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">UUID: {item.uuid.substring(0, 8)}</span>
                     </div>
                     
                     <p className="text-sm text-slate-300 font-medium line-clamp-3 mb-8 flex-1 italic leading-relaxed">
@@ -203,21 +208,22 @@ const HistoryView: React.FC = () => {
                     <div className="mt-auto pt-6 border-t border-slate-800/60 flex items-center justify-between">
                       <div className="flex gap-2">
                          <span className="text-[9px] font-black text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 uppercase">
-                           {item.generated_video?.[0]?.resolution || 'HD Ready'}
+                           {videoObj?.resolution || 'HD'}
                          </span>
                          <span className="text-[9px] font-black text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 uppercase">
-                           {item.generated_video?.[0]?.duration || '10'}S
+                           {videoObj?.duration || '10'}S
                          </span>
                       </div>
                       
-                      {hasVideo && (
+                      {/* Butang Muat Turun Sentiasa Muncul Jika Ada Link Sah */}
+                      {hasVideoLink && (
                          <div className="flex gap-3">
                            <a 
-                             href={rawVideoUrl} 
+                             href={videoSrc} 
                              target="_blank" 
                              rel="noreferrer"
                              className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 transition-all active:scale-90"
-                             title="Tonton Skrin Penuh"
+                             title="Tonton Penuh"
                            >
                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -229,9 +235,9 @@ const HistoryView: React.FC = () => {
                              className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xl active:scale-90 ${
                                downloadingUuid === item.uuid 
                                ? 'bg-slate-800 text-slate-500' 
-                               : 'bg-white text-slate-950 hover:bg-cyan-400'
+                               : 'bg-white text-slate-950 hover:bg-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)]'
                              }`}
-                             title="Muat Turun Fail Video"
+                             title="Muat Turun Video"
                            >
                              {downloadingUuid === item.uuid ? (
                                <div className="w-5 h-5 border-2 border-slate-600 border-t-slate-400 rounded-full animate-spin"></div>
