@@ -10,9 +10,9 @@ const App: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case AppView.SORA_STUDIO: return <SoraStudioView />;
+      case AppView.SORA_STUDIO: return <SoraStudioView onViewChange={setActiveView} />;
       case AppView.HISTORY: return <HistoryView />;
-      default: return <SoraStudioView />;
+      default: return <SoraStudioView onViewChange={setActiveView} />;
     }
   };
 

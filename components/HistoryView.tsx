@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 import { SoraHistoryItem } from '../types';
 
@@ -9,61 +9,82 @@ const HistoryView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeVideo, setActiveVideo] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
+  const pollingTimerRef = useRef<number | null>(null);
 
   /**
    * Mengekstrak URL video dari objek history yang kompleks.
+   * (Kekalkan logic sedia ada seperti diminta)
    */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
-    
-    // Keutamaan 1: generated_video array (Data penuh dari getSpecificHistory)
     if (item.generated_video && item.generated_video.length > 0) {
       const vid = item.generated_video[0];
       return vid.video_url || vid.video_uri || '';
     }
-    
-    // Keutamaan 2: generate_result (Biasanya dalam list view)
     if (item.generate_result && typeof item.generate_result === 'string') {
       if (item.generate_result.startsWith('http') || !item.generate_result.includes('{')) {
         return item.generate_result;
       }
-      
       try {
         const parsed = JSON.parse(item.generate_result);
         if (Array.isArray(parsed) && parsed[0]?.video_url) return parsed[0].video_url;
         if (parsed.video_url) return parsed.video_url;
       } catch (e) {}
     }
-
     return '';
   };
 
-  const fetchHistory = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  /**
+   * Mengambil senarai history dari API.
+   * Ditambah cache-busting secara automatik melalui geminiService.
+   */
+  const fetchHistory = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    
     try {
       const response = await getAllHistory(1, 50);
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
+        // Filter video - diperluaskan untuk pastikan Sora 2.0 tersenarai
         const videoItems = items.filter((item: any) => 
           item.type?.toLowerCase().includes('video') || 
-          item.model_name?.toLowerCase().includes('sora')
+          item.model_name?.toLowerCase().includes('sora') ||
+          item.inference_type?.toLowerCase().includes('video')
         );
+        
         setHistory(videoItems);
+
+        // SYNC STRATEGY: Sentiasa poll jika ada video tengah "Rendering" (status 1)
+        // atau jika tab baru sahaja dibuka (untuk tangkap video yang baru di-submit)
+        const hasActiveTasks = videoItems.some(item => Number(item.status) === 1);
+        
+        // Polling agresif setiap 5 saat untuk sync status real-time
+        if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 5000);
       } else {
         setHistory([]);
       }
     } catch (err: any) {
       console.error("Gagal sync vault:", err);
-      setError(err.message || "Vault synchronization failed. Sila cuba lagi.");
+      if (showLoading) setError("Gagal memuatkan rekod arkib dari Geminigen.ai.");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, []);
 
+  // Sync Vault pada permulaan
   useEffect(() => {
-    fetchHistory();
+    fetchHistory(true);
+    
+    // PENTING: Jika pengguna baru sahaja menekan "Generate", 
+    // kita beri sedikit masa untuk API propagated data ke senarai histories.
+    const retryInitial = setTimeout(() => fetchHistory(false), 2000);
+
+    return () => {
+      clearTimeout(retryInitial);
+      if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+    };
   }, [fetchHistory]);
 
   const handlePlay = async (item: SoraHistoryItem) => {
@@ -74,7 +95,6 @@ const HistoryView: React.FC = () => {
     try {
       let url = resolveVideoUrl(item);
 
-      // Jika URL tak cukup lengkap, fetch detail penuh dari API
       if (!url || !url.startsWith('http')) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
@@ -86,11 +106,11 @@ const HistoryView: React.FC = () => {
         const blobUrl = await fetchVideoAsBlob(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("Punca media tidak dijumpai dalam rekod.");
+        throw new Error("Punca media tidak dijumpai.");
       }
     } catch (e: any) {
       console.error("Gagal memuatkan video:", e);
-      alert(`Gagal memuatkan video: ${e.message || "Masalah teknikal dikesan."}`);
+      alert(`Gagal memuatkan video: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -141,14 +161,14 @@ const HistoryView: React.FC = () => {
           </div>
           
           <button 
-            onClick={fetchHistory} 
+            onClick={() => fetchHistory(true)} 
             disabled={loading} 
             className="group px-8 py-4 rounded-2xl bg-white text-slate-950 text-[10px] font-black uppercase tracking-widest hover:bg-cyan-400 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3 shadow-xl"
           >
             <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'Archiving...' : 'Sync Vault'}
+            {loading ? 'Syncing Vault...' : 'Sync Vault'}
           </button>
         </header>
 
@@ -160,7 +180,7 @@ const HistoryView: React.FC = () => {
 
         {history.length === 0 && !loading ? (
           <div className="text-center py-40 border-2 border-dashed border-slate-900 rounded-[3rem] bg-slate-900/10">
-            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Rekod arkib kosong.</p>
+            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Arkib Vault Kosong.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 pb-32">
@@ -168,6 +188,7 @@ const HistoryView: React.FC = () => {
               const videoSrc = activeVideo[item.uuid];
               const processing = isProcessing[item.uuid];
               const status = Number(item.status);
+              const progress = item.status_percentage || 0;
 
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/30 border border-slate-800/50 rounded-[2.5rem] overflow-hidden hover:border-cyan-500/30 transition-all duration-500 flex flex-col">
@@ -179,11 +200,20 @@ const HistoryView: React.FC = () => {
                       <img src={item.thumbnail_url} className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950">
-                        <svg className="w-12 h-12 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        {status === 1 ? (
+                           <div className="flex flex-col items-center gap-4">
+                             <div className="w-12 h-12 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
+                             <div className="flex flex-col items-center">
+                               <span className="text-white font-black text-xl leading-none">{progress}%</span>
+                               <span className="text-[8px] font-bold text-cyan-400 uppercase tracking-widest mt-1 animate-pulse">Rendering</span>
+                             </div>
+                           </div>
+                        ) : (
+                          <svg className="w-12 h-12 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        )}
                       </div>
                     )}
 
-                    {/* Overlay Play Button */}
                     {!videoSrc && status === 2 && (
                       <button 
                         onClick={() => handlePlay(item)}
@@ -200,10 +230,11 @@ const HistoryView: React.FC = () => {
                       </button>
                     )}
 
-                    {/* Status Badge */}
                     <div className="absolute top-4 right-4 flex gap-2">
                        {status === 1 && (
-                         <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-500 text-[8px] font-black uppercase tracking-widest border border-amber-500/20 animate-pulse">Rendering</span>
+                         <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-500 text-[8px] font-black uppercase tracking-widest border border-amber-500/20 animate-pulse">
+                           Progress {progress}%
+                         </span>
                        )}
                        {status === 3 && (
                          <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-500 text-[8px] font-black uppercase tracking-widest border border-rose-500/20">Error</span>
@@ -222,20 +253,20 @@ const HistoryView: React.FC = () => {
                     </div>
                     
                     <p className="text-slate-300 text-xs font-medium leading-relaxed line-clamp-3 mb-6 flex-1 italic">
-                      "{item.input_text || 'Tiada prompt.'}"
+                      "{item.input_text || 'No prompt.'}"
                     </p>
 
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <div className={`w-1.5 h-1.5 rounded-full ${status === 2 ? 'bg-cyan-500' : status === 1 ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
+                        <div className={`w-1.5 h-1.5 rounded-full ${status === 2 ? 'bg-cyan-500' : status === 1 ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'}`}></div>
                         <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
                       </div>
                       
                       <button 
                         onClick={() => handleDownload(item)}
-                        disabled={processing}
-                        className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-50"
-                        title="Muat Turun"
+                        disabled={processing || status !== 2}
+                        className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-20"
+                        title="Download MP4"
                       >
                         {processing ? (
                           <div className="w-4 h-4 border-2 border-slate-700 border-t-cyan-500 rounded-full animate-spin"></div>

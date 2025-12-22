@@ -7,23 +7,19 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menukar URL atau URI relatif kepada URL penuh yang berautentikasi.
- * PENTING: Jangan tambah api_key pada URL luaran (seperti Cloudflare R2 signed URLs)
- * kerana ia akan merosakkan tandatangan (signature) keselamatan fail tersebut.
+ * Ditambah parameter _t (timestamp) untuk bypass cache proxy/browser.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
-  // Jika URL adalah path relatif, tukar kepada URL CDN Geminigen
   if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
     cleanUrl = `${GEMINIGEN_CDN_URL}${path}`;
   }
   
-  // Cleanup double slashes
   cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, "$1");
 
-  // Hanya tambah kunci jika URL ke domain Geminigen (internal)
   const isInternal = cleanUrl.includes('geminigen.ai');
   const isSignedStorage = cleanUrl.includes('X-Amz-Signature') || cleanUrl.includes('cloudflarestorage.com');
 
@@ -31,10 +27,12 @@ export const prepareAuthenticatedUrl = (url: string): string => {
     try {
       const targetUrl = new URL(cleanUrl);
       targetUrl.searchParams.set('api_key', GEMINIGEN_KEY);
+      // Cache busting: Memastikan data sentiasa sync dengan server
+      targetUrl.searchParams.set('_t', Date.now().toString());
       return targetUrl.toString();
     } catch (e) {
       const separator = cleanUrl.includes('?') ? '&' : '?';
-      return `${cleanUrl}${separator}api_key=${GEMINIGEN_KEY}`;
+      return `${cleanUrl}${separator}api_key=${GEMINIGEN_KEY}&_t=${Date.now()}`;
     }
   }
 
@@ -60,29 +58,16 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
     const response = await fetch(proxyUrl, { ...options, headers });
     if (response.ok) return await response.json();
   } catch (e) {
-    console.warn("Corsproxy.io gagal, mencuba AllOrigins...");
+    console.warn("Proxy fallback 1 gagal.");
   }
 
-  // Strategi 2: AllOrigins
-  try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(authUrl)}`;
-    const response = await fetch(proxyUrl);
-    if (response.ok) {
-      const data = await response.json();
-      const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
-      return contents;
-    }
-  } catch (e) {
-    console.error("AllOrigins pun gagal.");
-  }
-
-  // Strategi 3: Direct
+  // Strategi 2: Direct (Jika proxy gagal)
   try {
     const response = await fetch(authUrl, { ...options, headers });
     if (response.ok) return await response.json();
   } catch (e) {}
 
-  throw new Error("Gagal menyambung ke pelayan API. Sila periksa sambungan rangkaian hampa.");
+  throw new Error("Gagal menyambung ke arkib Geminigen.ai.");
 }
 
 /**
@@ -92,10 +77,9 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
   if (url.startsWith('blob:')) return url;
 
-  // Sediakan URL (tambah key hanya jika perlu)
+  // Untuk media blob, kita guna prepareAuthenticatedUrl tanpa timestamp jika URL luaran
   const finalUrl = prepareAuthenticatedUrl(url);
   
-  // Cubaan 1: Direct Fetch (Beberapa storage benarkan CORS untuk media)
   try {
     const directResponse = await fetch(finalUrl, { mode: 'cors' });
     if (directResponse.ok) {
@@ -103,14 +87,12 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
       if (blob.size > 500) return URL.createObjectURL(blob);
     }
   } catch (e) {
-    console.warn("Direct fetch media gagal, mencuba sistem proxy...");
+    console.warn("Direct media fetch failed.");
   }
 
-  // Senarai proxy disusun mengikut kebolehpercayaan untuk fail besar (video)
   const proxyList = [
     `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(finalUrl)}`
   ];
 
   for (const pUrl of proxyList) {
@@ -118,24 +100,11 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
       const response = await fetch(pUrl);
       if (response.ok) {
         const blob = await response.blob();
-        // Pastikan blob adalah fail video sebenar, bukan ralat HTML dari proxy
-        if (blob && blob.size > 500 && blob.type.includes('video')) {
-          return URL.createObjectURL(blob);
-        }
-        // Fallback jika mime-type tak tepat tapi size besar
-        if (blob && blob.size > 100000) { 
-          return URL.createObjectURL(blob);
-        }
+        if (blob && blob.size > 500) return URL.createObjectURL(blob);
       }
-    } catch (e) {
-      console.warn(`Proxy ${pUrl} gagal dikesan.`);
-    }
+    } catch (e) {}
   }
 
-  // Jika semua proxy ralat (biasanya isu bandwidth atau rate limit), 
-  // kita pulangkan URL asal sebagai talian hayat terakhir.
-  // Sesetengah browser mungkin benarkan mainan video tanpa 'fetch' melalui tag <video src="...">
-  console.warn("Semua proxy gagal dikesan. Menggunakan URL asal sebagai fallback terakhir.");
   return finalUrl; 
 };
 
@@ -143,6 +112,7 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
  * GEMINIGEN.AI HISTORY APIS
  */
 export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
+  // Timestamp sudah ditambah secara automatik dalam prepareAuthenticatedUrl melalui fetchApi
   return fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
 };
 
@@ -164,21 +134,41 @@ export const generateSoraVideo = async (params: {
   formData.append('model', 'sora-2'); 
   formData.append('duration', params.duration.toString());
   formData.append('aspect_ratio', params.aspect_ratio);
-  if (params.imageFile) formData.append('files', params.imageFile);
+  if (params.imageFile) {
+    formData.append('files', params.imageFile);
+  }
 
-  const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
-  
-  const response = await fetch(url, {
+  const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
+
+  // Guna Proxy untuk POST FormData bagi mengelakkan CORS Preflight ralat (Failed to Fetch)
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'x-api-key': GEMINIGEN_KEY },
+      body: formData
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+    console.warn("Proxy POST gagal, mencuba Direct POST...");
+  } catch (e) {
+    console.warn("Proxy network error.");
+  }
+
+  const directResponse = await fetch(targetUrl, {
     method: 'POST',
     headers: { 'x-api-key': GEMINIGEN_KEY },
     body: formData
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+  if (!directResponse.ok) {
+    const errorData = await directResponse.json().catch(() => ({}));
     throw new Error(errorData?.detail?.message || "Gagal mulakan render video.");
   }
-  return response.json();
+  
+  return directResponse.json();
 };
 
 /**
