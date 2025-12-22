@@ -1,6 +1,5 @@
-
 import React, { useState, useRef } from 'react';
-import { generateSoraVideo, getSpecificHistory } from '../services/geminiService';
+import { generateSoraVideo, getSpecificHistory, getProxiedUrl } from '../services/geminiService';
 
 const SoraStudioView: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -50,8 +49,9 @@ const SoraStudioView: React.FC = () => {
         try {
           const result = await getSpecificHistory(uuid);
           if (result.status === 2) { 
-            const url = result.generated_video?.[0]?.video_url || result.generate_result;
-            setVideoUrl(url || null);
+            const rawUrl = result.generated_video?.[0]?.video_url || result.generate_result;
+            // Penting: Balut dengan proxy supaya video boleh play terus kat browser
+            setVideoUrl(rawUrl ? getProxiedUrl(rawUrl) : null);
             setIsGenerating(false);
             setProgress(100);
           } else if (result.status === 3) {
@@ -221,7 +221,7 @@ const SoraStudioView: React.FC = () => {
           <div className="xl:col-span-7">
             <div className={`aspect-video rounded-[2.5rem] overflow-hidden bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800/50 flex items-center justify-center relative shadow-2xl ${aspectRatio === 'portrait' ? 'max-w-md mx-auto aspect-[9/16]' : ''}`}>
               {videoUrl ? (
-                <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" />
+                <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" crossOrigin="anonymous" />
               ) : isGenerating ? (
                 <div className="text-center p-12 space-y-8">
                   <div className="relative w-40 h-40 mx-auto flex items-center justify-center">

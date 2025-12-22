@@ -12,18 +12,19 @@ const HistoryView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAllHistory(1, 30);
+      // Fetching a larger batch to ensure we find content
+      const data = await getAllHistory(1, 100);
       
       const items = data?.result || data?.data || (Array.isArray(data) ? data : []);
       
       if (items && Array.isArray(items)) {
-        // We filter for video generation types or items that have video-like data
+        // Filter for video-related items or items with results
         const videoHistory = items.filter((item: any) => 
           item.type === 'video' || 
           item.type === 'video_generation' ||
           (item.model_name && item.model_name.toLowerCase().includes('sora')) ||
-          item.generated_video?.length > 0 ||
-          item.generate_result?.includes('.mp4')
+          (item.generated_video && item.generated_video.length > 0) ||
+          (item.generate_result && typeof item.generate_result === 'string' && item.generate_result.includes('http'))
         );
         setHistory(videoHistory);
       } else {
@@ -31,11 +32,7 @@ const HistoryView: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Gagal sync history:", err);
-      if (err.message.includes('400')) {
-        setError("Ralat API (400): Sila pastikan kunci API Geminigen hampa sah.");
-      } else {
-        setError(`Ralat: ${err.message || 'Gagal menyambung ke server.'}`);
-      }
+      setError(`Gagal menyambung ke server: ${err.message || 'Sila cuba lagi'}`);
     } finally {
       setLoading(false);
     }
@@ -46,6 +43,7 @@ const HistoryView: React.FC = () => {
     
     setDownloadingUuid(uuid);
     try {
+      // Kami ambil blob melalui proxy untuk elak CORS dan mudahkan user save file
       const proxiedUrl = getProxiedUrl(url);
       const response = await fetch(proxiedUrl);
       if (!response.ok) throw new Error("Gagal mengambil data video dari server.");
@@ -55,15 +53,15 @@ const HistoryView: React.FC = () => {
       
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `azmeer-sora-${uuid.substring(0, 5)}.mp4`;
+      link.download = `azmeer-ai-video-${uuid.substring(0, 6)}.mp4`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      // Cleanup blob to save memory
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      // Cleanup blob url memory
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     } catch (e: any) {
-      console.error("Download failed:", e);
+      console.error("Download error:", e);
       alert(`Gagal muat turun: ${e.message}`);
     } finally {
       setDownloadingUuid(null);
@@ -104,7 +102,7 @@ const HistoryView: React.FC = () => {
               <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.3em]">Arkib Azmeer AI</p>
             </div>
             <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter uppercase">Vault <span className="text-slate-700">Video</span></h2>
-            <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mt-2">Semua hasil jana Sora 2.0 hampa ada kat sini</p>
+            <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mt-2">Semua video Sora hampa yang padu ada kat sini</p>
           </div>
           <button 
             onClick={fetchHistory}
@@ -124,33 +122,30 @@ const HistoryView: React.FC = () => {
               <div className="absolute inset-0 border-4 border-cyan-500/10 rounded-full"></div>
               <div className="absolute inset-0 border-4 border-t-cyan-500 rounded-full animate-spin"></div>
             </div>
-            <p className="text-[10px] font-black text-white uppercase tracking-widest">Menyemak Pangkalan Data...</p>
+            <p className="text-[10px] font-black text-white uppercase tracking-widest">Menyemak Arkib Video...</p>
           </div>
         ) : error ? (
           <div className="text-center py-40 bg-rose-500/5 rounded-[3rem] border border-rose-500/20 flex flex-col items-center gap-6">
-            <div className="w-20 h-20 bg-rose-950/30 rounded-full flex items-center justify-center text-rose-500">
-               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-               </svg>
-            </div>
-            <div className="max-w-md px-6">
-              <p className="text-rose-500 font-black uppercase tracking-widest">Gagal Capai Arkib</p>
-              <p className="text-xs text-slate-400 mt-4 font-bold">{error}</p>
-              <button onClick={fetchHistory} className="mt-8 px-8 py-3 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-400 transition-all">Cuba Lagi</button>
-            </div>
+            <p className="text-rose-500 font-black uppercase tracking-widest">Gagal Capai Arkib</p>
+            <p className="text-xs text-slate-400 mt-4 font-bold">{error}</p>
+            <button onClick={fetchHistory} className="mt-8 px-8 py-3 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest">Cuba Lagi</button>
           </div>
         ) : history.length === 0 ? (
           <div className="text-center py-40 bg-[#0f172a]/30 rounded-[3rem] border border-slate-800/50 flex flex-col items-center gap-6">
             <p className="text-slate-500 font-black uppercase tracking-widest">Tiada rekod video dijumpai</p>
-            <p className="text-xs text-slate-700 italic">Mungkin hampa kena buat video dulu kat Studio!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-20">
             {history.map((item) => {
-              // Better extraction of video URL
-              const rawVideoUrl = item.generated_video?.[0]?.video_url || item.generate_result || (item as any).video_url || '';
+              // Extraction logic yang lebih kukuh untuk cari URL video
+              const rawVideoUrl = 
+                (item.generated_video && item.generated_video.length > 0 ? item.generated_video[0].video_url : null) || 
+                item.generate_result || 
+                (item as any).video_url || 
+                '';
+
               const isCompleted = Number(item.status) === 2 || (item as any).status_desc === 'completed';
-              const hasVideo = rawVideoUrl.length > 10; // Basic check for a valid-looking URL
+              const hasVideo = rawVideoUrl.length > 5 && rawVideoUrl.startsWith('http');
               const videoUrl = hasVideo ? getProxiedUrl(rawVideoUrl) : '';
               
               return (
@@ -176,14 +171,12 @@ const HistoryView: React.FC = () => {
                           {getStatusLabel(item.status)}
                         </div>
                         {Number(item.status) === 1 && (
-                          <div className="relative w-40 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="relative w-40 h-1 bg-slate-800 rounded-full overflow-hidden">
                             <div className="h-full bg-cyan-500 animate-pulse" style={{ width: `${item.status_percentage || 20}%` }}></div>
                           </div>
                         )}
                         {Number(item.status) === 3 && (
-                          <p className="text-[10px] text-rose-500 font-bold px-4 text-center leading-relaxed">
-                            {item.error_message || "Maaf, ralat berlaku semasa menjana video ini."}
-                          </p>
+                          <p className="text-[10px] text-rose-500 font-bold px-4 text-center leading-relaxed">{item.error_message || "Ralat berlaku semasa penjanaan video."}</p>
                         )}
                       </div>
                     )}
@@ -210,7 +203,7 @@ const HistoryView: React.FC = () => {
                     <div className="mt-auto pt-6 border-t border-slate-800/60 flex items-center justify-between">
                       <div className="flex gap-2">
                          <span className="text-[9px] font-black text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 uppercase">
-                           {item.generated_video?.[0]?.resolution || 'HD 720p'}
+                           {item.generated_video?.[0]?.resolution || 'HD Ready'}
                          </span>
                          <span className="text-[9px] font-black text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 uppercase">
                            {item.generated_video?.[0]?.duration || '10'}S

@@ -6,15 +6,26 @@ const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 /**
  * Utiliti untuk membalut URL dengan proxy bagi memintas sekatan CORS.
  * Diperlukan untuk preview video dan muat turun fail dari domain luar.
+ * Kami juga selitkan API KEY ke dalam URL asal supaya server benarkan akses.
  */
 export const getProxiedUrl = (url: string | null | undefined): string => {
   if (!url) return '';
   // Jika URL sudah merupakan data base64 atau blob, pulangkan terus
   if (url.startsWith('data:') || url.startsWith('blob:')) return url;
   
-  // Gunakan corsproxy.io. Kita encode URL untuk mengelakkan masalah parsing.
-  // Proxy ini membolehkan browser membaca stream video walaupun server asal tak set header CORS.
-  return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  try {
+    const targetUrl = new URL(url);
+    // Masukkan api_key ke dalam query param URL asal jika belum ada
+    if (!targetUrl.searchParams.has('api_key') && !targetUrl.searchParams.has('key')) {
+      targetUrl.searchParams.set('api_key', GEMINIGEN_KEY);
+    }
+    
+    // Gunakan corsproxy.io untuk bypass CORS
+    return `https://corsproxy.io/?${encodeURIComponent(targetUrl.toString())}`;
+  } catch (e) {
+    // Fallback jika URL parsing gagal
+    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  }
 };
 
 /**
