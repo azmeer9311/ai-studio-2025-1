@@ -1,6 +1,9 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 
+// Mengatasi ralat TS2580: Cannot find name 'process'
+declare var process: { env: { [key: string]: string | undefined } };
+
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
@@ -201,9 +204,16 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
     contents: { parts: [{ text: prompt }] },
     config: { imageConfig: { aspectRatio } },
   });
+  
+  // Mengatasi ralat TS2532 & TS18048
   const parts = response.candidates?.[0]?.content?.parts;
-  const part = parts?.find(p => p.inlineData);
-  return part?.inlineData ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
+  if (!parts) return null;
+  
+  const part = parts.find(p => p.inlineData);
+  if (part && part.inlineData) {
+    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+  }
+  return null;
 };
 
 export const startVideoGeneration = async (prompt: string) => {
@@ -221,7 +231,8 @@ export const checkVideoStatus = async (operation: any) => {
 };
 
 export const fetchVideoContent = async (uri: string): Promise<string> => {
-  const response = await fetch(`${uri}&key=${process.env.API_KEY || ''}`);
+  const aiKey = process.env.API_KEY || '';
+  const response = await fetch(`${uri}&key=${aiKey}`);
   if (!response.ok) throw new Error("Failed to fetch video content");
   const blob = await response.blob();
   return URL.createObjectURL(blob);

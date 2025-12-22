@@ -2,6 +2,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Memberitahu TS bahawa process wujud dalam persekitaran Node semasa config ini dijalankan
+declare var process: any;
+
 export default defineConfig({
   plugins: [react()],
   define: {
