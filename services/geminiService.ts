@@ -3,10 +3,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
-// 3rd Party GeminiGen.AI Integration
+// GeminiGen.AI Configuration
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 
+/**
+ * GOOGLE GEMINI TOOLS
+ */
 export const generateText = async (prompt: string, history: { role: 'user' | 'model', parts: { text: string }[] }[] = []) => {
   const ai = getAI();
   const chat = ai.chats.create({
@@ -71,7 +74,11 @@ export const fetchVideoContent = async (uri: string) => {
   return URL.createObjectURL(blob);
 };
 
-// SORA (GeminiGen.AI)
+/**
+ * GEMINIGEN.AI TOOLS (SORA & TTS)
+ */
+
+// SORA Video Generation
 export const generateSoraVideo = async (params: {
   prompt: string;
   duration: 10 | 15 | 25;
@@ -80,30 +87,37 @@ export const generateSoraVideo = async (params: {
 }) => {
   const formData = new FormData();
   formData.append('prompt', params.prompt);
-  formData.append('model', params.duration === 25 ? 'sora-2-pro' : 'sora-2');
+  
+  // Model logic based on documentation
+  let modelName = 'sora-2';
+  if (params.duration === 25) {
+    modelName = 'sora-2-pro';
+  } else if (params.resolution === 'large' && params.duration === 15) {
+    modelName = 'sora-2-pro-hd';
+  }
+  
+  formData.append('model', modelName);
   formData.append('duration', params.duration.toString());
   formData.append('resolution', params.resolution);
   formData.append('aspect_ratio', params.aspect_ratio);
 
   const response = await fetch(`${GEMINIGEN_BASE_URL}/video-gen/sora`, {
     method: 'POST',
-    headers: { 'x-api-key': GEMINIGEN_KEY },
+    headers: { 
+      'x-api-key': GEMINIGEN_KEY 
+    },
     body: formData,
   });
 
-  if (!response.ok) throw new Error('Failed to start Sora generation');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.detail?.message || 'Failed to start Sora generation');
+  }
+  
   return response.json(); // Returns { uuid: string, ... }
 };
 
-export const checkSoraStatus = async (uuid: string) => {
-  const response = await fetch(`${GEMINIGEN_BASE_URL}/history/${uuid}`, {
-    headers: { 'x-api-key': GEMINIGEN_KEY }
-  });
-  if (!response.ok) throw new Error('Failed to check Sora status');
-  return response.json();
-};
-
-// TTS (GeminiGen.AI)
+// Text-to-Speech (TTS)
 export const generateTTS = async (text: string) => {
   const response = await fetch(`${GEMINIGEN_BASE_URL}/text-to-speech`, {
     method: 'POST',
@@ -113,21 +127,46 @@ export const generateTTS = async (text: string) => {
     },
     body: JSON.stringify({
       model: "tts-flash",
-      voices: [{ name: "Gacrux", voice: { id: "GM013", name: "Gacrux" } }],
+      voices: [
+        {
+          name: "Gacrux",
+          voice: {
+            id: "GM013",
+            name: "Gacrux"
+          }
+        }
+      ],
       speed: 1,
       input: text,
       output_format: "mp3"
     })
   });
 
-  if (!response.ok) throw new Error('TTS Generation failed');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.detail?.message || 'TTS Generation failed');
+  }
+  
   const data = await response.json();
-  // The GeminiGen.AI API uses webhooks or history. 
-  // We'll return the uuid to poll history for the mp3 link.
   return data.uuid;
 };
 
-// Audio Utils
+// History Polling (Shared for Sora and TTS)
+export const checkGeminiGenHistory = async (uuid: string) => {
+  const response = await fetch(`${GEMINIGEN_BASE_URL}/history/${uuid}`, {
+    method: 'GET',
+    headers: { 
+      'x-api-key': GEMINIGEN_KEY 
+    }
+  });
+  
+  if (!response.ok) throw new Error('Failed to check generation status');
+  return response.json();
+};
+
+/**
+ * AUDIO UTILS
+ */
 export function decodeBase64(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);

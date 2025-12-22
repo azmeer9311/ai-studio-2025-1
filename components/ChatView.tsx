@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { generateText, generateTTS, checkSoraStatus } from '../services/geminiService';
+import { generateText, generateTTS, checkGeminiGenHistory } from '../services/geminiService';
 import { ChatMessage } from '../types';
 
 const ChatView: React.FC = () => {
@@ -68,7 +68,7 @@ const ChatView: React.FC = () => {
       
       // Poll for audio URL
       const poll = async () => {
-        const history = await checkSoraStatus(uuid);
+        const history = await checkGeminiGenHistory(uuid);
         if (history.status === 2 && history.generated_audio?.[0]?.audio_url) {
           const audioUrl = history.generated_audio[0].audio_url;
           if (audioRef.current) {

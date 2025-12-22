@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { generateSoraVideo, checkSoraStatus } from '../services/geminiService';
+import { generateSoraVideo, checkGeminiGenHistory } from '../services/geminiService';
 
 const SoraStudioView: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -26,16 +26,17 @@ const SoraStudioView: React.FC = () => {
       });
       
       const poll = async () => {
-        const result = await checkSoraStatus(uuid);
+        const result = await checkGeminiGenHistory(uuid);
         if (result.status === 2) { // Completed
           setVideoUrl(result.generated_video?.[0]?.video_url || null);
           setIsGenerating(false);
+          setProgress(100);
         } else if (result.status === 3) { // Failed
-          throw new Error(result.error_message || "Generation failed");
+          throw new Error(result.error_message || "Generation failed. Please check your credit balance.");
         } else {
           // Update progress if available
-          setProgress(result.status_percentage || progress + (100 - progress) * 0.1);
-          setTimeout(poll, 5000);
+          setProgress(result.status_percentage || progress + (100 - progress) * 0.05);
+          setTimeout(poll, 4000);
         }
       };
       
@@ -43,7 +44,7 @@ const SoraStudioView: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       setIsGenerating(false);
-      alert(error.message || "Sora generation failed. Please check your credits.");
+      alert(error.message || "Sora generation failed. Ensure your prompt is detailed and you have sufficient credits.");
     }
   };
 
@@ -52,31 +53,30 @@ const SoraStudioView: React.FC = () => {
       <div className="max-w-5xl mx-auto w-full">
         <header className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] font-bold uppercase tracking-widest mb-4 border border-indigo-500/20">
-            Next-Gen Video
+            Advanced Video Synthesis
           </div>
           <h2 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
-            Sora Studio
+            Sora 2.0 Studio
           </h2>
           <p className="text-slate-400 max-w-xl mx-auto">
-            Experience state-of-the-art video synthesis with OpenAI Sora. 
-            Create realistic scenes with physics-aware motions.
+            Leverage OpenAI's Sora model to create physics-aware, cinematic videos from text descriptions.
           </p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-6 rounded-3xl shadow-2xl">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Cinematic Prompt</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Cinematic Description</label>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A stylish woman walks down a Tokyo street filled with warm glowing neon and animated city signage..."
+                placeholder="A gorgeous, detailed drone shot of a hidden emerald lagoon surrounded by jagged limestone cliffs, crystal clear water revealing ancient corals below..."
                 className="w-full h-40 bg-slate-950/50 border border-slate-800 rounded-2xl p-4 text-sm text-slate-200 outline-none focus:border-indigo-500/50 transition-all resize-none placeholder:text-slate-700"
               />
               
               <div className="space-y-6 mt-8">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Duration</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Duration & Model</label>
                   <div className="grid grid-cols-3 gap-2">
                     {[10, 15, 25].map((d) => (
                       <button
@@ -88,33 +88,34 @@ const SoraStudioView: React.FC = () => {
                             : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'
                         }`}
                       >
-                        {d}s
+                        {d}s {d === 25 ? '(Pro)' : ''}
                       </button>
                     ))}
                   </div>
+                  <p className="mt-2 text-[10px] text-slate-500 italic">25s requires sora-2-pro model.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Quality</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Resolution</label>
                     <select 
                       value={resolution} 
                       onChange={(e) => setResolution(e.target.value as 'small' | 'large')}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50"
                     >
-                      <option value="small">720p HD</option>
-                      <option value="large">1080p FHD</option>
+                      <option value="small">720p (Fast)</option>
+                      <option value="large">1080p (HQ)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Format</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Aspect Ratio</label>
                     <select 
                       value={aspectRatio} 
                       onChange={(e) => setAspectRatio(e.target.value as 'landscape' | 'portrait')}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50"
                     >
-                      <option value="landscape">16:9 Landscape</option>
-                      <option value="portrait">9:16 Portrait</option>
+                      <option value="landscape">16:9 Cinema</option>
+                      <option value="portrait">9:16 Mobile</option>
                     </select>
                   </div>
                 </div>
@@ -128,11 +129,11 @@ const SoraStudioView: React.FC = () => {
                 {isGenerating ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                    <span>Processing...</span>
+                    <span>Synthesizing...</span>
                   </div>
                 ) : (
                   <>
-                    <span>Generate Masterpiece</span>
+                    <span>Generate Video</span>
                     <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                     </svg>
@@ -147,16 +148,19 @@ const SoraStudioView: React.FC = () => {
               {videoUrl ? (
                 <>
                   <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" />
-                  <a 
-                    href={videoUrl} 
-                    target="_blank"
-                    download="sora-video.mp4"
-                    className="absolute top-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
-                  >
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                  </a>
+                  <div className="absolute top-4 right-4 flex gap-2">
+                    <a 
+                      href={videoUrl} 
+                      target="_blank"
+                      download="sora-video.mp4"
+                      className="bg-black/60 backdrop-blur-md p-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
+                      title="Download"
+                    >
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  </div>
                 </>
               ) : isGenerating ? (
                 <div className="text-center p-12 space-y-6">
@@ -165,14 +169,14 @@ const SoraStudioView: React.FC = () => {
                       <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
                       <circle 
                         cx="50" cy="50" r="45" 
-                        fill="none" stroke="url(#gradient)" 
+                        fill="none" stroke="url(#soraGradient)" 
                         strokeWidth="4" 
                         strokeDasharray="283" 
                         strokeDashoffset={283 - (283 * progress / 100)} 
                         className="transition-all duration-500 ease-out" 
                       />
                       <defs>
-                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <linearGradient id="soraGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                           <stop offset="0%" stopColor="#6366f1" />
                           <stop offset="100%" stopColor="#a855f7" />
                         </linearGradient>
@@ -180,12 +184,12 @@ const SoraStudioView: React.FC = () => {
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                       <span className="text-2xl font-bold text-white">{Math.floor(progress)}%</span>
-                      <span className="text-[8px] text-slate-500 uppercase tracking-widest">Sora AI</span>
+                      <span className="text-[8px] text-slate-500 uppercase tracking-widest">Latent Space</span>
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <p className="text-indigo-400 font-medium animate-pulse">Consulting the latent space...</p>
-                    <p className="text-xs text-slate-600 italic">Sora creates temporal consistency which takes a moment.</p>
+                    <p className="text-indigo-400 font-medium animate-pulse">Consulting the diffusion model...</p>
+                    <p className="text-xs text-slate-600">Sora is rendering complex physics interactions.</p>
                   </div>
                 </div>
               ) : (
@@ -195,24 +199,24 @@ const SoraStudioView: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <p className="text-slate-400 font-medium">Visual canvas ready.</p>
-                  <p className="text-sm text-slate-600 max-w-xs mx-auto">Your high-fidelity AI video will materialize here after generation.</p>
+                  <p className="text-slate-400 font-medium">Ready for Generation</p>
+                  <p className="text-sm text-slate-600 max-w-xs mx-auto">Describe your vision on the left to materialize a high-fidelity video here.</p>
                 </div>
               )}
             </div>
             
             <div className="mt-8 grid grid-cols-3 gap-6">
                <div className="bg-slate-900/30 p-4 rounded-2xl border border-slate-800/50">
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Physics Engine</h4>
-                  <p className="text-xs text-slate-400">Advanced awareness of mass and motion.</p>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Temporal Consistency</h4>
+                  <p className="text-xs text-slate-400">Maintains character and object identity across frames.</p>
                </div>
                <div className="bg-slate-900/30 p-4 rounded-2xl border border-slate-800/50">
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Temporal Flow</h4>
-                  <p className="text-xs text-slate-400">Consistent characters across complex shots.</p>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Visual Logic</h4>
+                  <p className="text-xs text-slate-400">Deep understanding of real-world physics and light.</p>
                </div>
                <div className="bg-slate-900/30 p-4 rounded-2xl border border-slate-800/50">
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Visual Fidelity</h4>
-                  <p className="text-xs text-slate-400">Realistic lighting and material textures.</p>
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Detailed Rendering</h4>
+                  <p className="text-xs text-slate-400">Rich textures and realistic skin/fur/fluid dynamics.</p>
                </div>
             </div>
           </div>
