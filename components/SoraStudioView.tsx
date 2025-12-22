@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { generateSoraVideo, getSpecificHistory, getProxiedUrl } from '../services/geminiService';
+import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 
 const SoraStudioView: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -50,12 +50,15 @@ const SoraStudioView: React.FC = () => {
           const result = await getSpecificHistory(uuid);
           if (result.status === 2) { 
             const rawUrl = result.generated_video?.[0]?.video_url || result.generate_result;
-            // Penting: Balut dengan proxy supaya video boleh play terus kat browser
-            setVideoUrl(rawUrl ? getProxiedUrl(rawUrl) : null);
+            if (rawUrl) {
+              setProgress(100);
+              // Tukar terus jadi local blob untuk elakkan CORS issue pada preview
+              const blobUrl = await fetchVideoAsBlob(rawUrl);
+              setVideoUrl(blobUrl);
+            }
             setIsGenerating(false);
-            setProgress(100);
           } else if (result.status === 3) {
-            throw new Error(result.error_message || "Adoi, generation gagal. Check hampa punya credit atau prompt.");
+            throw new Error(result.error_message || "Generation gagal.");
           } else {
             setProgress(result.status_percentage || progress + 1);
             setTimeout(poll, 5000);
@@ -70,7 +73,7 @@ const SoraStudioView: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       setIsGenerating(false);
-      alert(error.message || "Sora generation failed. Sila pastikan gambar dan prompt hampa padu.");
+      alert(error.message || "Sora generation failed.");
     }
   };
 
@@ -191,11 +194,6 @@ const SoraStudioView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center justify-between px-2">
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Resolusi</span>
-                <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">720P (HD READY)</span>
-              </div>
-
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating || !prompt.trim()}
@@ -204,15 +202,10 @@ const SoraStudioView: React.FC = () => {
                 {isGenerating ? (
                   <div className="flex items-center gap-3">
                     <div className="w-5 h-5 border-4 border-slate-900/20 border-t-slate-900 rounded-full animate-spin"></div>
-                    <span>Sat ya, tengah render...</span>
+                    <span>Tengah Render...</span>
                   </div>
                 ) : (
-                  <>
-                    <span>Generate Video</span>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </>
+                  <span>Generate Video</span>
                 )}
               </button>
             </div>
@@ -221,57 +214,19 @@ const SoraStudioView: React.FC = () => {
           <div className="xl:col-span-7">
             <div className={`aspect-video rounded-[2.5rem] overflow-hidden bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800/50 flex items-center justify-center relative shadow-2xl ${aspectRatio === 'portrait' ? 'max-w-md mx-auto aspect-[9/16]' : ''}`}>
               {videoUrl ? (
-                <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" crossOrigin="anonymous" />
+                <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" />
               ) : isGenerating ? (
                 <div className="text-center p-12 space-y-8">
-                  <div className="relative w-40 h-40 mx-auto flex items-center justify-center">
-                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="48" fill="none" stroke="#1e293b" strokeWidth="4" />
-                      <circle 
-                        cx="50" cy="50" r="48" 
-                        fill="none" stroke="url(#studioGradient)" 
-                        strokeWidth="4" 
-                        strokeDasharray="301.59" 
-                        strokeDashoffset={301.59 - (301.59 * progress / 100)} 
-                        className="transition-all duration-700 ease-out" 
-                      />
-                      <defs>
-                        <linearGradient id="studioGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                          <stop offset="0%" stopColor="#22d3ee" />
-                          <stop offset="100%" stopColor="#3b82f6" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                    <div className="text-center">
-                      <span className="text-4xl font-black text-white">{Math.floor(progress)}%</span>
-                    </div>
+                  <div className="text-center">
+                    <span className="text-4xl font-black text-white">{Math.floor(progress)}%</span>
                   </div>
-                  <div className="space-y-3">
-                    <p className="text-cyan-400 font-black uppercase tracking-[0.2em] animate-pulse text-xs">Tengah Synthesize Frame</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Azmeer AI tengah render fizik video hampa</p>
-                  </div>
+                  <p className="text-cyan-400 font-black uppercase tracking-[0.2em] animate-pulse text-xs">Processing Video Blob</p>
                 </div>
               ) : (
-                <div className="text-center space-y-6 opacity-40 group">
-                  <div className="w-24 h-24 bg-slate-900 rounded-full flex items-center justify-center mx-auto border border-slate-800 group-hover:scale-110 transition-transform">
-                    <svg className="w-12 h-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-white font-black uppercase tracking-widest text-sm mb-1">Preview Kat Sini</p>
-                    <p className="text-xs text-slate-500 font-bold italic">Tulis prompt kat sebelah pastu klik generate k!</p>
-                  </div>
+                <div className="text-center space-y-6 opacity-40">
+                  <p className="text-white font-black uppercase tracking-widest text-sm">Preview Kat Sini</p>
                 </div>
               )}
-            </div>
-            
-            <div className="mt-8 flex items-center justify-center gap-4 text-[10px] font-black text-slate-600 uppercase tracking-widest">
-              <span>Model: Sora 2</span>
-              <span className="w-1 h-1 rounded-full bg-slate-800"></span>
-              <span>Physics Aware</span>
-              <span className="w-1 h-1 rounded-full bg-slate-800"></span>
-              <span>HD 720p Resolution</span>
             </div>
           </div>
         </div>
