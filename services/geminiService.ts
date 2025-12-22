@@ -3,6 +3,10 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
+// 3rd Party GeminiGen.AI Integration
+const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
+const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
+
 export const generateText = async (prompt: string, history: { role: 'user' | 'model', parts: { text: string }[] }[] = []) => {
   const ai = getAI();
   const chat = ai.chats.create({
@@ -40,6 +44,7 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
   throw new Error("No image data found in response");
 };
 
+// VEO (Google)
 export const startVideoGeneration = async (prompt: string) => {
   const ai = getAI();
   let operation = await ai.models.generateVideos({
@@ -64,6 +69,62 @@ export const fetchVideoContent = async (uri: string) => {
   const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
   const blob = await response.blob();
   return URL.createObjectURL(blob);
+};
+
+// SORA (GeminiGen.AI)
+export const generateSoraVideo = async (params: {
+  prompt: string;
+  duration: 10 | 15 | 25;
+  resolution: 'small' | 'large';
+  aspect_ratio: 'landscape' | 'portrait';
+}) => {
+  const formData = new FormData();
+  formData.append('prompt', params.prompt);
+  formData.append('model', params.duration === 25 ? 'sora-2-pro' : 'sora-2');
+  formData.append('duration', params.duration.toString());
+  formData.append('resolution', params.resolution);
+  formData.append('aspect_ratio', params.aspect_ratio);
+
+  const response = await fetch(`${GEMINIGEN_BASE_URL}/video-gen/sora`, {
+    method: 'POST',
+    headers: { 'x-api-key': GEMINIGEN_KEY },
+    body: formData,
+  });
+
+  if (!response.ok) throw new Error('Failed to start Sora generation');
+  return response.json(); // Returns { uuid: string, ... }
+};
+
+export const checkSoraStatus = async (uuid: string) => {
+  const response = await fetch(`${GEMINIGEN_BASE_URL}/history/${uuid}`, {
+    headers: { 'x-api-key': GEMINIGEN_KEY }
+  });
+  if (!response.ok) throw new Error('Failed to check Sora status');
+  return response.json();
+};
+
+// TTS (GeminiGen.AI)
+export const generateTTS = async (text: string) => {
+  const response = await fetch(`${GEMINIGEN_BASE_URL}/text-to-speech`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': GEMINIGEN_KEY
+    },
+    body: JSON.stringify({
+      model: "tts-flash",
+      voices: [{ name: "Gacrux", voice: { id: "GM013", name: "Gacrux" } }],
+      speed: 1,
+      input: text,
+      output_format: "mp3"
+    })
+  });
+
+  if (!response.ok) throw new Error('TTS Generation failed');
+  const data = await response.json();
+  // The GeminiGen.AI API uses webhooks or history. 
+  // We'll return the uuid to poll history for the mp3 link.
+  return data.uuid;
 };
 
 // Audio Utils

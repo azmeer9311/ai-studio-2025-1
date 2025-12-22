@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
 import ImageLabView from './components/ImageLabView';
 import VideoStudioView from './components/VideoStudioView';
+import SoraStudioView from './components/SoraStudioView';
 import LiveOmniView from './components/LiveOmniView';
 
 const App: React.FC = () => {
@@ -18,6 +19,8 @@ const App: React.FC = () => {
         return <ImageLabView />;
       case AppView.VIDEO_STUDIO:
         return <VideoStudioView />;
+      case AppView.SORA_STUDIO:
+        return <SoraStudioView />;
       case AppView.LIVE_OMNI:
         return <LiveOmniView />;
       default:

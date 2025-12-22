@@ -3,6 +3,7 @@ export enum AppView {
   CHAT = 'CHAT',
   IMAGE_LAB = 'IMAGE_LAB',
   VIDEO_STUDIO = 'VIDEO_STUDIO',
+  SORA_STUDIO = 'SORA_STUDIO',
   LIVE_OMNI = 'LIVE_OMNI'
 }
 
