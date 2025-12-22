@@ -13,14 +13,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
     { view: AppView.HISTORY, label: 'HISTORY', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
   ];
 
+  const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
+
   return (
     <aside className="hidden md:flex w-72 bg-[#020617] border-r border-slate-800/50 flex-col h-full shrink-0">
       <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
-        <div className="flex items-center gap-3 mb-12">
-          <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.3)]">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+        <div className="flex items-center gap-4 mb-12">
+          <div className="w-12 h-12 relative flex items-center justify-center">
+            {/* Pulsing Back Glow */}
+            <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full animate-pulse"></div>
+            <img 
+              src={logoUrl} 
+              alt="Azmeer AI Logo" 
+              className="w-full h-full object-contain relative z-10 logo-glow-animate"
+              loading="eager"
+            />
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tighter text-white uppercase leading-none mb-1">azmeer</h1>
@@ -52,10 +59,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
         <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
           <div className="flex items-center gap-2 mb-2">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sora Core</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sora Core Active</span>
           </div>
           <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
-            <div className="bg-cyan-500 h-full w-[100%]"></div>
+            <div className="bg-cyan-500 h-full w-[100%] transition-all duration-1000"></div>
           </div>
         </div>
       </div>

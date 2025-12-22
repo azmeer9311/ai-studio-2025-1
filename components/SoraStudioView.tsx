@@ -22,6 +22,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange }) => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<number | null>(null);
+  const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -129,8 +130,14 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange }) => {
     <div className="flex flex-col h-full bg-[#020617] p-4 md:p-12 overflow-y-auto custom-scrollbar">
       <div className="max-w-6xl mx-auto w-full">
         <header className="mb-10 flex flex-col items-center text-center">
-          <div className="mb-4 flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-black uppercase tracking-[0.3em] border border-cyan-500/20">
-            Azmeer AI • Sora 2.0 Studio
+          <div className="mb-6 flex items-center gap-3 px-5 py-2 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-black uppercase tracking-[0.3em] border border-cyan-500/20 shadow-[0_0_20px_rgba(34,211,238,0.05)]">
+            <img 
+              src={logoUrl} 
+              alt="Logo" 
+              className="w-5 h-5 object-contain logo-glow-animate" 
+              loading="eager"
+            />
+            <span>Azmeer AI • Sora 2.0 Studio</span>
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter mb-4">
             SORA <span className="text-cyan-500">2.0</span>

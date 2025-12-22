@@ -153,7 +153,7 @@ const HistoryView: React.FC = () => {
           <div>
             <div className="flex items-center gap-3 mb-3">
               <div className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-              <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.5em]">Central Archive</p>
+              <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.5em]">azmeer ai</p>
             </div>
             <h2 className="text-5xl font-black text-white tracking-tighter uppercase leading-none">
               History <span className="text-slate-800">Vault</span>
