@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { encodeBase64, decodeBase64, decodeAudioData } from '../services/geminiService';
 
-declare var process: { env: { [key: string]: string | undefined } };
+declare const process: any;
 
 const LiveOmniView: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
@@ -35,7 +35,8 @@ const LiveOmniView: React.FC = () => {
   const startSession = async () => {
     try {
       setIsActive(true);
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const apiKey = (process?.env?.API_KEY as string) || '';
+      const ai = new GoogleGenAI({ apiKey });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       streamRef.current = stream;
 
@@ -95,33 +96,40 @@ const LiveOmniView: React.FC = () => {
             }, 1000);
           },
           onmessage: async (msg) => {
-            if (msg.serverContent?.inputTranscription) {
-              const text = msg.serverContent.inputTranscription.text || "";
+            const serverContent = msg.serverContent;
+            if (!serverContent) return;
+
+            if (serverContent.inputTranscription) {
+              const text = serverContent.inputTranscription.text || "";
               setTranscriptions(prev => [...prev, { role: 'user', text }]);
             }
-            if (msg.serverContent?.outputTranscription) {
-              const text = msg.serverContent.outputTranscription.text || "";
+            if (serverContent.outputTranscription) {
+              const text = serverContent.outputTranscription.text || "";
               setTranscriptions(prev => [...prev, { role: 'model', text }]);
             }
 
-            // Memperbaiki ralat TS18048 dengan semakan rantaian optional
-            const parts = msg.serverContent?.modelTurn?.parts;
-            const audioData = parts?.[0]?.inlineData?.data;
+            const modelTurn = serverContent.modelTurn;
+            const parts = modelTurn?.parts;
             
-            if (audioData) {
-              const buffer = await decodeAudioData(decodeBase64(audioData), outputAudioCtx, 24000, 1);
-              const source = outputAudioCtx.createBufferSource();
-              source.buffer = buffer;
-              source.connect(outputAudioCtx.destination);
+            if (parts && parts.length > 0) {
+              const firstPart = parts[0];
+              const audioData = firstPart.inlineData?.data;
               
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioCtx.currentTime);
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += buffer.duration;
-              sourcesRef.current.add(source);
-              source.onended = () => sourcesRef.current.delete(source);
+              if (audioData) {
+                const buffer = await decodeAudioData(decodeBase64(audioData), outputAudioCtx, 24000, 1);
+                const source = outputAudioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(outputAudioCtx.destination);
+                
+                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioCtx.currentTime);
+                source.start(nextStartTimeRef.current);
+                nextStartTimeRef.current += buffer.duration;
+                sourcesRef.current.add(source);
+                source.onended = () => sourcesRef.current.delete(source);
+              }
             }
 
-            if (msg.serverContent?.interrupted) {
+            if (serverContent.interrupted) {
               sourcesRef.current.forEach(s => s.stop());
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;

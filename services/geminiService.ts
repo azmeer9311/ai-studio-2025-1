@@ -1,8 +1,8 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 
-// Mengatasi ralat TS2580: Cannot find name 'process'
-declare var process: { env: { [key: string]: string | undefined } };
+// Mengatasi ralat TS2580 dengan pengisytiharan global yang lebih luas
+declare const process: any;
 
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
@@ -150,16 +150,18 @@ export const generateSoraVideo = async (params: {
 };
 
 export const generateText = async (prompt: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = (process?.env?.API_KEY as string) || '';
+  const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
   });
-  return response.text;
+  return response.text || '';
 };
 
 export const generateTTS = async (text: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = (process?.env?.API_KEY as string) || '';
+  const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text: text }] }],
@@ -198,18 +200,21 @@ export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampl
 }
 
 export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" = "1:1"): Promise<string | null> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = (process?.env?.API_KEY as string) || '';
+  const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
     config: { imageConfig: { aspectRatio } },
   });
   
-  // Mengatasi ralat TS2532 & TS18048
-  const parts = response.candidates?.[0]?.content?.parts;
-  if (!parts) return null;
+  const candidates = response.candidates;
+  if (!candidates || candidates.length === 0) return null;
   
-  const part = parts.find(p => p.inlineData);
+  const content = candidates[0].content;
+  if (!content || !content.parts) return null;
+  
+  const part = content.parts.find(p => p.inlineData);
   if (part && part.inlineData) {
     return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
   }
@@ -217,7 +222,8 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
 };
 
 export const startVideoGeneration = async (prompt: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = (process?.env?.API_KEY as string) || '';
+  const ai = new GoogleGenAI({ apiKey });
   return await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
     prompt: prompt,
@@ -226,13 +232,14 @@ export const startVideoGeneration = async (prompt: string) => {
 };
 
 export const checkVideoStatus = async (operation: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = (process?.env?.API_KEY as string) || '';
+  const ai = new GoogleGenAI({ apiKey });
   return await ai.operations.getVideosOperation({ operation });
 };
 
 export const fetchVideoContent = async (uri: string): Promise<string> => {
-  const aiKey = process.env.API_KEY || '';
-  const response = await fetch(`${uri}&key=${aiKey}`);
+  const apiKey = (process?.env?.API_KEY as string) || '';
+  const response = await fetch(`${uri}&key=${apiKey}`);
   if (!response.ok) throw new Error("Failed to fetch video content");
   const blob = await response.blob();
   return URL.createObjectURL(blob);
