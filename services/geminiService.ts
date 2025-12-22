@@ -1,14 +1,17 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
 
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 
 /**
- * Menambah api_key kepada URL untuk akses yang sah.
+ * Memastikan URL disertakan dengan API Key untuk akses media.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
+  
+  // Buang prefix blob jika ada
   if (cleanUrl.startsWith('blob:http')) {
     cleanUrl = cleanUrl.replace(/^blob:/, '');
   }
@@ -16,78 +19,56 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   try {
     const targetUrl = new URL(cleanUrl);
     targetUrl.searchParams.set('api_key', GEMINIGEN_KEY);
-    targetUrl.searchParams.set('key', GEMINIGEN_KEY);
     return targetUrl.toString();
   } catch (e) {
     const separator = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${separator}api_key=${GEMINIGEN_KEY}&key=${GEMINIGEN_KEY}`;
+    return `${cleanUrl}${separator}api_key=${GEMINIGEN_KEY}`;
   }
 };
 
 /**
- * Mendapatkan URL yang diproxied secara terus untuk pemain video (Streaming mode).
+ * Proxy URL untuk mengelakkan ralat CORS pada elemen <video>
  */
 export const getProxiedLink = (url: string): string => {
+  if (!url) return '';
   const authUrl = prepareAuthenticatedUrl(url);
-  // Menggunakan allorigins raw sebagai primary proxy untuk streaming
   return `https://api.allorigins.win/raw?url=${encodeURIComponent(authUrl)}`;
 };
 
 /**
- * Mencuba memuat turun video sebagai Blob URL. 
- * Jika gagal, ia akan memulangkan null supaya UI boleh guna fallback.
+ * Fungsi utiliti fetch dengan proxy untuk API metadata
  */
-export const fetchVideoAsBlob = async (url: string): Promise<string | null> => {
-  const authUrl = prepareAuthenticatedUrl(url);
-  
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(authUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(authUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(authUrl)}`
-  ];
+async function fetchApi(endpoint: string, options: RequestInit = {}) {
+  const url = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
+  const proxiedUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 
-  for (const proxy of proxies) {
-    try {
-      const response = await fetch(proxy, { method: 'GET' });
-      if (response.ok) {
-        const blob = await response.blob();
-        if (blob.size > 1000) return URL.createObjectURL(blob);
-      }
-    } catch (e) {
-      console.warn("Proxy gagal memuatkan blob:", proxy);
+  const response = await fetch(proxiedUrl, {
+    ...options,
+    headers: {
+      'x-api-key': GEMINIGEN_KEY,
+      'Accept': 'application/json',
+      ...options.headers,
     }
-  }
-  return null;
+  });
+
+  if (!response.ok) throw new Error(`API Error: ${response.status}`);
+  return await response.json();
+}
+
+/**
+ * GeminiGen.AI History APIs
+ */
+export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
+  return fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
+};
+
+export const getSpecificHistory = async (uuid: string) => {
+  return fetchApi(`/history/${uuid}`);
 };
 
 /**
- * GEMINIGEN.AI APIs
+ * Sora Generation
  */
-async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 2) {
-  const authUrl = prepareAuthenticatedUrl(url);
-  // Untuk API metadata, kita guna corsproxy
-  const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
-
-  try {
-    const response = await fetch(proxiedUrl, {
-      ...options,
-      headers: {
-        'x-api-key': GEMINIGEN_KEY,
-        'Accept': 'application/json',
-        ...options.headers,
-      }
-    });
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-    return await response.json();
-  } catch (err: any) {
-    if (retries > 0) {
-      await new Promise(r => setTimeout(r, 1000));
-      return fetchWithRetry(url, options, retries - 1);
-    }
-    throw err;
-  }
-}
-
 export const generateSoraVideo = async (params: {
   prompt: string;
   duration: 10 | 15;
@@ -102,7 +83,7 @@ export const generateSoraVideo = async (params: {
   if (params.imageFile) formData.append('files', params.imageFile);
 
   const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
-  const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  const proxiedUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
   
   const response = await fetch(proxiedUrl, {
     method: 'POST',
@@ -114,18 +95,9 @@ export const generateSoraVideo = async (params: {
   return response.json();
 };
 
-export const getAllHistory = async (page = 1) => {
-  return fetchWithRetry(`${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=50&page=${page}`);
-};
-
-export const getSpecificHistory = async (uuid: string) => {
-  return fetchWithRetry(`${GEMINIGEN_BASE_URL}/history/${uuid}`);
-};
-
 /**
- * GOOGLE GENAI SDK UTILITIES
+ * Google GenAI SDK
  */
-
 export const startVideoGeneration = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   return await ai.models.generateVideos({
@@ -144,9 +116,27 @@ export const checkVideoStatus = async (operation: any) => {
   return await ai.operations.getVideosOperation({ operation: operation });
 };
 
-export const fetchVideoContent = async (uri: string) => {
-  const blob = await fetchVideoAsBlob(uri);
-  return blob || getProxiedLink(uri);
+// Fix: Add fetchVideoContent for Veo video streaming support
+/**
+ * Fetches video content from a URI and returns a blob URL (for Veo models).
+ */
+export const fetchVideoContent = async (uri: string): Promise<string> => {
+  const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
+  if (!response.ok) throw new Error("Failed to fetch video content");
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+};
+
+// Fix: Add fetchVideoAsBlob for Sora/Geminigen service support
+/**
+ * Fetches video as a blob and returns a blob URL (for Sora/Geminigen).
+ */
+export const fetchVideoAsBlob = async (url: string): Promise<string> => {
+  const authUrl = prepareAuthenticatedUrl(url);
+  const response = await fetch(authUrl);
+  if (!response.ok) throw new Error("Failed to fetch video as blob");
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 };
 
 export const generateText = async (prompt: string) => {
@@ -195,6 +185,9 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
   return null;
 };
 
+/**
+ * Audio Decoding
+ */
 export function encodeBase64(bytes: Uint8Array) {
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
