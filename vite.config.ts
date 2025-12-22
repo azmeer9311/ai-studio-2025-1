@@ -8,9 +8,9 @@ declare var process: any;
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Memastikan process.env.API_KEY tersedia di frontend pada waktu build
-    // Ditambah fallback string kosong untuk keselamatan
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
+    // Memastikan API keys tersedia di frontend pada waktu build
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
+    'process.env.OPENAI_API_KEY': JSON.stringify(process.env.OPENAI_API_KEY || '')
   },
   server: {
     port: 3000,
