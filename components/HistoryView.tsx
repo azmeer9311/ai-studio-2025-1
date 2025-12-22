@@ -140,8 +140,8 @@ const HistoryView: React.FC = () => {
               
               // Cuba cari URL dalam semua kemungkinan field
               const rawVideoUrl = 
-                videoObj?.video_url || 
                 (typeof item.generate_result === 'string' ? item.generate_result : '') || 
+                videoObj?.video_url || 
                 (item as any).video_url || 
                 (item as any).url ||
                 '';
@@ -154,7 +154,7 @@ const HistoryView: React.FC = () => {
               
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/40 border border-slate-800/60 rounded-[2.5rem] overflow-hidden flex flex-col hover:border-cyan-500/30 transition-all duration-500 relative">
-                  <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                  <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center border-b border-slate-800/60">
                     {/* Render video terus jika link ada, walaupun status belum '2' (Sebab data sync kadang slow) */}
                     {hasVideoLink ? (
                       <video 
@@ -234,7 +234,7 @@ const HistoryView: React.FC = () => {
                              disabled={downloadingUuid === item.uuid}
                              className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xl active:scale-90 ${
                                downloadingUuid === item.uuid 
-                               ? 'bg-slate-800 text-slate-500' 
+                               ? 'bg-slate-800 text-slate-500 shadow-inner' 
                                : 'bg-white text-slate-950 hover:bg-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)]'
                              }`}
                              title="Muat Turun Video"
