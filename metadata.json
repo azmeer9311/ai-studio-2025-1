@@ -1,0 +1,8 @@
+{
+  "name": "Gemini Omnis",
+  "description": "A world-class multimodal AI workspace leveraging the full power of Gemini 3.0 and Veo. Experience state-of-the-art text generation, image creation, video synthesis, and real-time audio-visual conversations in one sleek interface.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
