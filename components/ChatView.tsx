@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { generateText, generateTTS, checkGeminiGenHistory } from '../services/geminiService';
+import { generateText, generateTTS, decodeBase64, decodeAudioData } from '../services/geminiService';
 import { ChatMessage } from '../types';
 
 const ChatView: React.FC = () => {
@@ -16,7 +16,7 @@ const ChatView: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -57,31 +57,27 @@ const ChatView: React.FC = () => {
 
   const handleTTS = async (message: ChatMessage) => {
     if (playingId === message.id) {
-      audioRef.current?.pause();
-      setPlayingId(null);
       return;
     }
 
     try {
       setPlayingId(message.id);
-      const uuid = await generateTTS(message.content);
+      const base64Audio = await generateTTS(message.content);
       
-      // Poll for audio URL
-      const poll = async () => {
-        const history = await checkGeminiGenHistory(uuid);
-        if (history.status === 2 && history.generated_audio?.[0]?.audio_url) {
-          const audioUrl = history.generated_audio[0].audio_url;
-          if (audioRef.current) {
-            audioRef.current.src = audioUrl;
-            audioRef.current.play();
-          }
-        } else if (history.status === 1) {
-          setTimeout(poll, 2000);
-        } else {
-          setPlayingId(null);
+      if (base64Audio) {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         }
-      };
-      poll();
+        const ctx = audioContextRef.current;
+        const buffer = await decodeAudioData(decodeBase64(base64Audio), ctx, 24000, 1);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.onended = () => setPlayingId(null);
+        source.start();
+      } else {
+        setPlayingId(null);
+      }
     } catch (error) {
       console.error("TTS failed:", error);
       setPlayingId(null);
@@ -138,12 +134,6 @@ const ChatView: React.FC = () => {
           </div>
         )}
       </div>
-
-      <audio 
-        ref={audioRef} 
-        onEnded={() => setPlayingId(null)} 
-        className="hidden" 
-      />
 
       <div className="p-6 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent">
         <form onSubmit={handleSend} className="max-w-4xl mx-auto relative group">

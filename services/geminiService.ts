@@ -1,84 +1,17 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
-// GeminiGen.AI Configuration
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 
-/**
- * GOOGLE GEMINI TOOLS
- */
-export const generateText = async (prompt: string, history: { role: 'user' | 'model', parts: { text: string }[] }[] = []) => {
-  const ai = getAI();
-  const chat = ai.chats.create({
-    model: 'gemini-3-flash-preview',
-    config: {
-      temperature: 0.7,
-      topP: 0.95,
-      topK: 40,
-    },
-  });
-  
-  const response = await chat.sendMessage({ message: prompt });
-  return response.text;
-};
-
-export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" = "1:1") => {
-  const ai = getAI();
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [{ text: prompt }],
-    },
-    config: {
-      imageConfig: {
-        aspectRatio,
-      },
-    },
-  });
-
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
-    }
-  }
-  throw new Error("No image data found in response");
-};
-
-// VEO (Google)
-export const startVideoGeneration = async (prompt: string) => {
-  const ai = getAI();
-  let operation = await ai.models.generateVideos({
-    model: 'veo-3.1-fast-generate-preview',
-    prompt: prompt,
-    config: {
-      numberOfVideos: 1,
-      resolution: '720p',
-      aspectRatio: '16:9'
-    }
-  });
-  return operation;
-};
-
-export const checkVideoStatus = async (operation: any) => {
-  const ai = getAI();
-  const result = await ai.operations.getVideosOperation({ operation });
-  return result;
-};
-
-export const fetchVideoContent = async (uri: string) => {
-  const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
-  const blob = await response.blob();
-  return URL.createObjectURL(blob);
+const headers = {
+  'x-api-key': GEMINIGEN_KEY
 };
 
 /**
- * GEMINIGEN.AI TOOLS (SORA & TTS)
+ * GEMINIGEN.AI SORA VIDEO GENERATION
+ * Adheres to multipart/form-data requirements and model specs.
  */
-
-// SORA Video Generation
 export const generateSoraVideo = async (params: {
   prompt: string;
   duration: 10 | 15 | 25;
@@ -88,11 +21,14 @@ export const generateSoraVideo = async (params: {
   const formData = new FormData();
   formData.append('prompt', params.prompt);
   
-  // Model logic based on documentation
+  // Model Logic per documentation:
+  // sora-2: 10s or 15s (small)
+  // sora-2-pro: 25s (small)
+  // sora-2-pro-hd: 15s (large)
   let modelName = 'sora-2';
   if (params.duration === 25) {
     modelName = 'sora-2-pro';
-  } else if (params.resolution === 'large' && params.duration === 15) {
+  } else if (params.resolution === 'large') {
     modelName = 'sora-2-pro-hd';
   }
   
@@ -103,85 +39,156 @@ export const generateSoraVideo = async (params: {
 
   const response = await fetch(`${GEMINIGEN_BASE_URL}/video-gen/sora`, {
     method: 'POST',
-    headers: { 
-      'x-api-key': GEMINIGEN_KEY 
-    },
+    headers: headers, // Fetch handles boundary for FormData
     body: formData,
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.detail?.message || 'Failed to start Sora generation');
+    throw new Error(errorData?.detail?.message || 'Gagal untuk mulakan generation Sora.');
   }
   
-  return response.json(); // Returns { uuid: string, ... }
+  return response.json(); 
 };
 
-// Text-to-Speech (TTS)
-export const generateTTS = async (text: string) => {
-  const response = await fetch(`${GEMINIGEN_BASE_URL}/text-to-speech`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': GEMINIGEN_KEY
-    },
-    body: JSON.stringify({
-      model: "tts-flash",
-      voices: [
-        {
-          name: "Gacrux",
-          voice: {
-            id: "GM013",
-            name: "Gacrux"
-          }
-        }
-      ],
-      speed: 1,
-      input: text,
-      output_format: "mp3"
-    })
+/**
+ * GEMINIGEN.AI HISTORY APIS
+ */
+
+// Fetch all histories with pagination
+export const getAllHistory = async (page = 1, itemsPerPage = 20) => {
+  const response = await fetch(`${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`, {
+    method: 'GET',
+    headers: headers
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.detail?.message || 'TTS Generation failed');
-  }
   
-  const data = await response.json();
-  return data.uuid;
+  if (!response.ok) throw new Error('Gagal ambil data history.');
+  return response.json();
 };
 
-// History Polling (Shared for Sora and TTS)
-export const checkGeminiGenHistory = async (uuid: string) => {
+// Polling: Get detailed info for a specific conversion
+export const getSpecificHistory = async (uuid: string) => {
   const response = await fetch(`${GEMINIGEN_BASE_URL}/history/${uuid}`, {
     method: 'GET',
-    headers: { 
-      'x-api-key': GEMINIGEN_KEY 
-    }
+    headers: headers
   });
   
-  if (!response.ok) throw new Error('Failed to check generation status');
+  if (!response.ok) throw new Error('Gagal check status generation.');
   return response.json();
 };
 
 /**
- * AUDIO UTILS
+ * GOOGLE GENAI SDK (For secondary features like Chat/TTS)
  */
-export function decodeBase64(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export function encodeBase64(bytes: Uint8Array): string {
+export const generateText = async (prompt: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+  });
+  return response.text;
+};
+
+export const generateTTS = async (text: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash-preview-tts",
+    contents: [{ parts: [{ text: `Say clearly: ${text}` }] }],
+    config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+      },
+    },
+  });
+  return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+};
+
+/**
+ * GOOGLE GENAI IMAGE GENERATION
+ */
+// Fix for components/ImageLabView.tsx: generateImage
+export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16") => {
+  // Always create instance with latest API KEY from process.env
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: { parts: [{ text: prompt }] },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio
+      }
+    }
+  });
+
+  const candidate = response.candidates?.[0];
+  if (candidate?.content?.parts) {
+    for (const part of candidate.content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+  }
+  throw new Error("Gagal generate image.");
+};
+
+/**
+ * GOOGLE GENAI VIDEO GENERATION (VEO)
+ */
+// Fix for components/VideoStudioView.tsx: startVideoGeneration
+export const startVideoGeneration = async (prompt: string) => {
+  // Always create instance with latest API KEY from process.env
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return await ai.models.generateVideos({
+    model: 'veo-3.1-fast-generate-preview',
+    prompt: prompt,
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p',
+      aspectRatio: '16:9'
+    }
+  });
+};
+
+// Fix for components/VideoStudioView.tsx: checkVideoStatus
+export const checkVideoStatus = async (operation: any) => {
+  // Always create instance with latest API KEY from process.env
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return await ai.operations.getVideosOperation({ operation: operation });
+};
+
+// Fix for components/VideoStudioView.tsx: fetchVideoContent
+export const fetchVideoContent = async (uri: string) => {
+  const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
+  if (!response.ok) throw new Error("Gagal ambil content video.");
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+};
+
+/**
+ * UTILITIES
+ */
+
+// Fix for components/LiveOmniView.tsx: encodeBase64
+export function encodeBase64(bytes: Uint8Array) {
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+export function decodeBase64(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 export async function decodeAudioData(

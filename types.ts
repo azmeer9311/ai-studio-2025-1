@@ -1,23 +1,31 @@
 
 export enum AppView {
-  CHAT = 'CHAT',
-  IMAGE_LAB = 'IMAGE_LAB',
-  VIDEO_STUDIO = 'VIDEO_STUDIO',
   SORA_STUDIO = 'SORA_STUDIO',
-  LIVE_OMNI = 'LIVE_OMNI'
+  HISTORY = 'HISTORY'
+}
+
+export interface SoraHistoryItem {
+  id: number;
+  uuid: string;
+  model_name: string;
+  input_text: string;
+  status: number; // 1: processing, 2: completed, 3: failed
+  status_percentage: number;
+  created_at: string;
+  generated_video?: Array<{
+    video_url: string;
+    duration: number;
+    aspect_ratio: string;
+    resolution: string;
+  }>;
+  error_message?: string;
+  // Fix: Property 'generate_result' does not exist on type 'SoraHistoryItem'.
+  generate_result?: string;
 }
 
 export interface ChatMessage {
+  id: string;
   role: 'user' | 'model';
   content: string;
-  id: string;
-  timestamp: number;
-}
-
-export interface GeneratedAsset {
-  id: string;
-  type: 'image' | 'video';
-  url: string;
-  prompt: string;
   timestamp: number;
 }

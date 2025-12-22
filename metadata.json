@@ -1,6 +1,6 @@
 {
-  "name": "Gemini Omnis",
-  "description": "A world-class multimodal AI workspace leveraging the full power of Gemini 3.0 and Veo. Experience state-of-the-art text generation, image creation, video synthesis, and real-time audio-visual conversations in one sleek interface.",
+  "name": "azmeer ai studio",
+  "description": "State-of-the-art Sora 2.0 video synthesis and archive vault.",
   "requestFramePermissions": [
     "camera",
     "microphone"
