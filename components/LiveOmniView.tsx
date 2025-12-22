@@ -33,8 +33,7 @@ const LiveOmniView: React.FC = () => {
   const startSession = async () => {
     try {
       setIsActive(true);
-      // Fix: Strictly use process.env.API_KEY for GoogleGenAI initialization as per SDK guidelines
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       streamRef.current = stream;
 
@@ -78,7 +77,6 @@ const LiveOmniView: React.FC = () => {
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputAudioCtx.destination);
             
-            // Frame streaming
             const interval = setInterval(() => {
               if (videoRef.current && canvasRef.current && sessionRef.current) {
                 const canvas = canvasRef.current;
@@ -104,7 +102,7 @@ const LiveOmniView: React.FC = () => {
               setTranscriptions(prev => [...prev, { role: 'model', text }]);
             }
 
-            const audioData = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audioData) {
               const buffer = await decodeAudioData(decodeBase64(audioData), outputAudioCtx, 24000, 1);
               const source = outputAudioCtx.createBufferSource();

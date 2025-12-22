@@ -5,10 +5,6 @@ const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
-/**
- * Menukar URL atau URI relatif kepada URL penuh yang berautentikasi.
- * Ditambah parameter _t (timestamp) untuk bypass cache proxy/browser.
- */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
@@ -27,7 +23,6 @@ export const prepareAuthenticatedUrl = (url: string): string => {
     try {
       const targetUrl = new URL(cleanUrl);
       targetUrl.searchParams.set('api_key', GEMINIGEN_KEY);
-      // Cache busting: Memastikan data sentiasa sync dengan server
       targetUrl.searchParams.set('_t', Date.now().toString());
       return targetUrl.toString();
     } catch (e) {
@@ -39,9 +34,6 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   return cleanUrl;
 };
 
-/**
- * Fungsi fetch API utama dengan Proxy Fallback agresif.
- */
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const targetUrl = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
   const authUrl = prepareAuthenticatedUrl(targetUrl);
@@ -52,7 +44,6 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
     ...options.headers,
   };
 
-  // Strategi 1: Corsproxy.io
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
     const response = await fetch(proxyUrl, { ...options, headers });
@@ -61,7 +52,6 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
     console.warn("Proxy fallback 1 gagal.");
   }
 
-  // Strategi 2: Direct (Jika proxy gagal)
   try {
     const response = await fetch(authUrl, { ...options, headers });
     if (response.ok) return await response.json();
@@ -70,14 +60,10 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
   throw new Error("Gagal menyambung ke arkib Geminigen.ai.");
 }
 
-/**
- * Memuat turun video sebagai local blob dengan senarai proxy yang lebih luas.
- */
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
   if (url.startsWith('blob:')) return url;
 
-  // Untuk media blob, kita guna prepareAuthenticatedUrl tanpa timestamp jika URL luaran
   const finalUrl = prepareAuthenticatedUrl(url);
   
   try {
@@ -108,11 +94,7 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   return finalUrl; 
 };
 
-/**
- * GEMINIGEN.AI HISTORY APIS
- */
 export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
-  // Timestamp sudah ditambah secara automatik dalam prepareAuthenticatedUrl melalui fetchApi
   return fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
 };
 
@@ -120,9 +102,6 @@ export const getSpecificHistory = async (uuid: string) => {
   return fetchApi(`/history/${uuid}`);
 };
 
-/**
- * SORA GENERATION
- */
 export const generateSoraVideo = async (params: {
   prompt: string;
   duration: 10 | 15;
@@ -140,7 +119,6 @@ export const generateSoraVideo = async (params: {
 
   const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
 
-  // Guna Proxy untuk POST FormData bagi mengelakkan CORS Preflight ralat (Failed to Fetch)
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
     const response = await fetch(proxyUrl, {
@@ -152,10 +130,7 @@ export const generateSoraVideo = async (params: {
     if (response.ok) {
       return await response.json();
     }
-    console.warn("Proxy POST gagal, mencuba Direct POST...");
-  } catch (e) {
-    console.warn("Proxy network error.");
-  }
+  } catch (e) {}
 
   const directResponse = await fetch(targetUrl, {
     method: 'POST',
@@ -171,11 +146,8 @@ export const generateSoraVideo = async (params: {
   return directResponse.json();
 };
 
-/**
- * SDK UTILITIES
- */
 export const generateText = async (prompt: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
@@ -184,7 +156,7 @@ export const generateText = async (prompt: string) => {
 };
 
 export const generateTTS = async (text: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text: text }] }],
@@ -223,18 +195,19 @@ export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampl
 }
 
 export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" = "1:1"): Promise<string | null> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
     config: { imageConfig: { aspectRatio } },
   });
-  const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-  return part ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
+  const parts = response.candidates?.[0]?.content?.parts;
+  const part = parts?.find(p => p.inlineData);
+  return part?.inlineData ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
 };
 
 export const startVideoGeneration = async (prompt: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   return await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
     prompt: prompt,
@@ -243,12 +216,12 @@ export const startVideoGeneration = async (prompt: string) => {
 };
 
 export const checkVideoStatus = async (operation: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   return await ai.operations.getVideosOperation({ operation });
 };
 
 export const fetchVideoContent = async (uri: string): Promise<string> => {
-  const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
+  const response = await fetch(`${uri}&key=${process.env.API_KEY || ''}`);
   if (!response.ok) throw new Error("Failed to fetch video content");
   const blob = await response.blob();
   return URL.createObjectURL(blob);
