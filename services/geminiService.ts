@@ -4,6 +4,20 @@ const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 
 /**
+ * Utiliti untuk membalut URL dengan proxy bagi memintas sekatan CORS.
+ * Diperlukan untuk preview video dan muat turun fail dari domain luar.
+ */
+export const getProxiedUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  // Jika URL sudah merupakan data base64 atau blob, pulangkan terus
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  
+  // Gunakan corsproxy.io. Kita encode URL untuk mengelakkan masalah parsing.
+  // Proxy ini membolehkan browser membaca stream video walaupun server asal tak set header CORS.
+  return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+};
+
+/**
  * Standardized fetch helper refined for maximum CORS compatibility.
  * Uses a CORS proxy for geminigen.ai requests to bypass browser restrictions.
  */
@@ -11,13 +25,10 @@ async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 
   const urlObj = new URL(url);
   
   // Ensure authentication is present in query string. 
-  // We send both 'api_key' and 'key' as different versions of the API use different keys.
   urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
   urlObj.searchParams.set('key', GEMINIGEN_KEY);
-  // Add a cache-buster
   urlObj.searchParams.set('_t', Date.now().toString());
 
-  // Prepend CORS proxy to bypass "Failed to fetch" CORS errors
   const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(urlObj.toString())}`;
 
   const config: RequestInit = {
@@ -76,7 +87,6 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  // Proxied POST request for Sora generation
   const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}&key=${GEMINIGEN_KEY}`;
   const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
   
@@ -99,7 +109,6 @@ export const generateSoraVideo = async (params: {
  * GEMINIGEN.AI HISTORY APIS
  */
 export const getAllHistory = async (page = 1, itemsPerPage = 20) => {
-  // Added filter_by=all which is mandatory for many versions of this API list endpoint.
   const url = `${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
   return fetchWithRetry(url, { method: 'GET' });
 };
