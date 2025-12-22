@@ -1,48 +1,62 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getAllHistory } from '../services/geminiService';
 import { SoraHistoryItem } from '../types';
 
 const HistoryView: React.FC = () => {
   const [history, setHistory] = useState<SoraHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchHistory = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getAllHistory(1, 50);
+      if (data && data.success && data.result) {
+        // Filter for video types or sora models
+        const videoHistory = data.result.filter((item: SoraHistoryItem) => 
+          item.type === 'video' || 
+          item.model_name.toLowerCase().includes('sora')
+        );
+        setHistory(videoHistory);
+      } else if (data && data.result) {
+        // Fallback if success flag is missing but result is there
+        setHistory(data.result);
+      } else {
+        setHistory([]);
+      }
+    } catch (err: any) {
+      console.error("Gagal sync history:", err);
+      if (err.message === 'Failed to fetch') {
+        setError("Masalah Rangkaian: Pelayar menyekat akses ke API (CORS) atau talian internet hampa tak stabil. Cuba refresh sat lagi.");
+      } else {
+        setError(`Ralat: ${err.message || 'Sesuatu yang tak dijangka berlaku.'}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const data = await getAllHistory();
-        // Docs say results are in 'result' array.
-        // We filter for video types to keep the vault clean.
-        if (data.success && data.result) {
-          const videoHistory = data.result.filter((item: any) => 
-            item.type === 'video' || item.media_type === 'video' || item.model_name.includes('sora')
-          );
-          setHistory(videoHistory);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchHistory();
-  }, []);
+  }, [fetchHistory]);
 
   const getStatusColor = (status: number) => {
     switch (status) {
-      case 1: return 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20';
-      case 2: return 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20';
-      case 3: return 'text-red-500 bg-red-500/10 border-red-500/20';
-      default: return 'text-slate-500 bg-slate-500/10 border-slate-500/20';
+      case 1: return 'text-amber-500 bg-amber-500/10 border-amber-500/20';
+      case 2: return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+      case 3: return 'text-rose-500 bg-rose-500/10 border-rose-500/20';
+      default: return 'text-slate-500 bg-slate-500/10 border-slate-800';
     }
   };
 
   const getStatusLabel = (status: number) => {
     switch (status) {
-      case 1: return 'Tengah Buat';
+      case 1: return 'Tengah Render';
       case 2: return 'Dah Siap';
-      case 3: return 'Failed Bro';
-      default: return 'Tah Mana Silap';
+      case 3: return 'Gagal Teruk';
+      default: return 'Status Pelik';
     }
   };
 
@@ -51,93 +65,156 @@ const HistoryView: React.FC = () => {
       <div className="max-w-7xl mx-auto w-full">
         <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <h2 className="text-4xl font-black text-white tracking-tighter mb-2 uppercase">HISTORY <span className="text-cyan-500">VAULT</span></h2>
-            <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Tengok balik video yang hampa dah buat</p>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse"></span>
+              <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.3em]">GeminiGen.AI Sync</p>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter uppercase">Vault <span className="text-slate-700">Arkib</span></h2>
+            <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mt-2">Semua video Sora 2.0 hampa ada kat sini</p>
           </div>
           <button 
-            onClick={() => window.location.reload()}
-            className="px-6 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-colors"
+            onClick={fetchHistory}
+            disabled={loading}
+            className="flex items-center gap-2 px-8 py-4 rounded-2xl bg-white text-slate-950 text-[10px] font-black uppercase tracking-widest hover:bg-cyan-400 transition-all active:scale-95 shadow-xl shadow-cyan-500/10 disabled:opacity-50"
           >
-            Refresh List
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh Data
           </button>
         </header>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-40 gap-4">
-            <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-            <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Tengah loading jap...</p>
+          <div className="flex flex-col items-center justify-center py-40 gap-6">
+            <div className="relative w-16 h-16">
+              <div className="absolute inset-0 border-4 border-cyan-500/10 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-t-cyan-500 rounded-full animate-spin"></div>
+            </div>
+            <div className="text-center">
+              <p className="text-[10px] font-black text-white uppercase tracking-widest mb-1">Menghubungi Server</p>
+              <p className="text-[10px] text-slate-500 font-bold italic">Tengah sedut data arkib geminigen...</p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="text-center py-40 bg-rose-500/5 rounded-[3rem] border border-rose-500/20 flex flex-col items-center gap-6">
+            <div className="w-20 h-20 bg-rose-950/30 rounded-full flex items-center justify-center text-rose-500">
+               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+               </svg>
+            </div>
+            <div className="max-w-md px-6">
+              <p className="text-rose-500 font-black uppercase tracking-widest">Adoi! Gagal Sedut Data</p>
+              <p className="text-xs text-slate-500 mt-2 font-bold italic leading-relaxed">{error}</p>
+              <button 
+                onClick={fetchHistory}
+                className="mt-8 px-6 py-3 rounded-xl border border-rose-500/30 text-rose-500 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all shadow-lg shadow-rose-500/10"
+              >
+                Cuba Sekali Lagi
+              </button>
+            </div>
           </div>
         ) : history.length === 0 ? (
-          <div className="text-center py-40 bg-[#0f172a]/30 rounded-[3rem] border border-slate-800/50">
-            <p className="text-slate-500 font-black uppercase tracking-widest">Takde video lagi la.</p>
-            <p className="text-xs text-slate-700 mt-2 font-bold italic">Jom create video pertama hampa kat sebelah!</p>
+          <div className="text-center py-40 bg-[#0f172a]/30 rounded-[3rem] border border-slate-800/50 flex flex-col items-center gap-6">
+            <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center text-slate-700">
+               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+               </svg>
+            </div>
+            <div>
+              <p className="text-slate-500 font-black uppercase tracking-widest">Arkib Masih Kosong</p>
+              <p className="text-xs text-slate-700 mt-2 font-bold italic max-w-xs mx-auto">Nampaknya hampa belum generate video guna Sora 2.0 lagi. Jom pi Studio jap!</p>
+            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-20">
             {history.map((item) => {
-              // Priority: generated_video array, then generate_result URL
               const videoUrl = item.generated_video?.[0]?.video_url || item.generate_result;
+              const hasVideo = item.status === 2 && videoUrl;
               
               return (
-                <div key={item.uuid} className="group bg-[#0f172a]/40 border border-slate-800/60 rounded-[2rem] overflow-hidden flex flex-col hover:border-cyan-500/30 transition-all hover:shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+                <div key={item.uuid} className="group bg-[#0f172a]/40 border border-slate-800/60 rounded-[2.5rem] overflow-hidden flex flex-col hover:border-cyan-500/30 transition-all duration-500 hover:shadow-[0_30px_60px_rgba(0,0,0,0.5)] relative">
                   <div className="aspect-video bg-slate-950 relative overflow-hidden">
-                    {item.status === 2 && videoUrl ? (
+                    {hasVideo ? (
                       <video 
-                        src={videoUrl} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        src={videoUrl || ''} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000"
                         onMouseOver={e => (e.target as HTMLVideoElement).play()}
                         onMouseOut={e => (e.target as HTMLVideoElement).pause()}
                         muted
                         loop
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center gap-4">
-                        <div className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${getStatusColor(item.status)}`}>
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-slate-900/50">
+                        {item.thumbnail_url ? (
+                          <img src={item.thumbnail_url} className="absolute inset-0 w-full h-full object-cover opacity-20 blur-sm" alt="Thumbnail" />
+                        ) : null}
+                        <div className={`relative px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${getStatusColor(item.status)}`}>
                           {getStatusLabel(item.status)}
                         </div>
                         {item.status === 1 && (
-                          <div className="w-24 h-1 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="relative w-32 h-1 bg-slate-800 rounded-full overflow-hidden">
                             <div className="h-full bg-cyan-500 animate-pulse" style={{ width: `${item.status_percentage || 20}%` }}></div>
                           </div>
                         )}
+                        {item.status === 3 && (
+                          <p className="text-[9px] text-rose-500 font-bold px-8 text-center line-clamp-2">{item.error_message || "Maaf, sistem ada problem jap."}</p>
+                        )}
                       </div>
                     )}
+                    
+                    <div className="absolute top-4 left-4">
+                       <span className="bg-black/60 backdrop-blur-md text-[9px] font-black text-white px-3 py-1.5 rounded-full border border-white/10 uppercase tracking-widest">
+                         {item.model_name}
+                       </span>
+                    </div>
                   </div>
                   
-                  <div className="p-6 flex-1 flex flex-col">
+                  <div className="p-8 flex-1 flex flex-col">
                     <div className="flex items-center justify-between mb-4">
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
-                        {new Date(item.created_at).toLocaleDateString()}
+                      <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                        {new Date(item.created_at).toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </span>
-                      <span className="text-[9px] font-black text-cyan-500 uppercase tracking-widest">{item.model_name}</span>
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">#{item.id}</span>
                     </div>
                     
-                    <p className="text-xs text-slate-300 font-medium line-clamp-2 mb-6 leading-relaxed flex-1">
-                      {item.input_text}
+                    <p className="text-sm text-slate-300 font-medium line-clamp-3 mb-8 leading-relaxed flex-1 italic">
+                      "{item.input_text}"
                     </p>
 
-                    <div className="mt-auto pt-4 border-t border-slate-800/60 flex items-center justify-between">
+                    <div className="mt-auto pt-6 border-t border-slate-800/60 flex items-center justify-between">
                       <div className="flex gap-2">
-                         <span className="text-[8px] font-black text-slate-500 px-2 py-1 rounded bg-slate-900 border border-slate-800">
-                           {item.generated_video?.[0]?.resolution || 'HD'}
+                         <span className="text-[9px] font-black text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 uppercase">
+                           {item.generated_video?.[0]?.resolution || '720p'}
                          </span>
-                         <span className="text-[8px] font-black text-slate-500 px-2 py-1 rounded bg-slate-900 border border-slate-800">
+                         <span className="text-[9px] font-black text-slate-400 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 uppercase">
                            {item.generated_video?.[0]?.duration || '10'}S
                          </span>
                       </div>
-                      {item.status === 2 && videoUrl && (
-                         <a 
-                           href={videoUrl} 
-                           target="_blank" 
-                           rel="noreferrer"
-                           className="text-cyan-400 hover:text-white transition-colors"
-                           title="Download"
-                           download
-                         >
-                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                           </svg>
-                         </a>
+                      
+                      {hasVideo && (
+                         <div className="flex gap-3">
+                           <a 
+                             href={videoUrl || '#'} 
+                             target="_blank" 
+                             rel="noreferrer"
+                             className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 hover:bg-cyan-500 hover:text-slate-950 transition-all"
+                             title="Tengok Original"
+                           >
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                             </svg>
+                           </a>
+                           <a 
+                             href={videoUrl || '#'} 
+                             download={`sora-video-${item.uuid}.mp4`}
+                             className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-slate-950 hover:bg-cyan-400 transition-all shadow-lg active:scale-90"
+                             title="Download Video"
+                           >
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                             </svg>
+                           </a>
+                         </div>
                       )}
                     </div>
                   </div>

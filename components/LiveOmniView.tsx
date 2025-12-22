@@ -33,7 +33,8 @@ const LiveOmniView: React.FC = () => {
   const startSession = async () => {
     try {
       setIsActive(true);
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Fix: Strictly use process.env.API_KEY for GoogleGenAI initialization as per SDK guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       streamRef.current = stream;
 

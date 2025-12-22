@@ -1,15 +1,36 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { generateSoraVideo, getSpecificHistory } from '../services/geminiService';
 
 const SoraStudioView: React.FC = () => {
   const [prompt, setPrompt] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<10 | 15>(10);
   const [aspectRatio, setAspectRatio] = useState<'landscape' | 'portrait'>('landscape');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFilePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const clearFile = () => {
+    setSelectedFile(null);
+    setFilePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -22,22 +43,20 @@ const SoraStudioView: React.FC = () => {
         prompt,
         duration,
         aspect_ratio: aspectRatio,
-        imageUrl: imageUrl.trim() || undefined
+        imageFile: selectedFile || undefined
       });
       
       const poll = async () => {
         try {
           const result = await getSpecificHistory(uuid);
-          // Docs: status 1: processing, 2: completed, 3: failed
           if (result.status === 2) { 
             const url = result.generated_video?.[0]?.video_url || result.generate_result;
             setVideoUrl(url || null);
             setIsGenerating(false);
             setProgress(100);
           } else if (result.status === 3) {
-            throw new Error(result.error_message || "Adoi, generation gagal. Mungkin prompt tak kena atau credit tak cukup.");
+            throw new Error(result.error_message || "Adoi, generation gagal. Check hampa punya credit atau prompt.");
           } else {
-            // Smooth progress simulation based on API percentage
             setProgress(result.status_percentage || progress + 1);
             setTimeout(poll, 5000);
           }
@@ -51,7 +70,7 @@ const SoraStudioView: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       setIsGenerating(false);
-      alert(error.message || "Sora generation failed. Sila check credit atau link gambar hampa.");
+      alert(error.message || "Sora generation failed. Sila pastikan gambar dan prompt hampa padu.");
     }
   };
 
@@ -60,13 +79,13 @@ const SoraStudioView: React.FC = () => {
       <div className="max-w-6xl mx-auto w-full">
         <header className="mb-10 flex flex-col items-center text-center">
           <div className="mb-4 flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-black uppercase tracking-[0.3em] border border-cyan-500/20">
-            Jom Buat Video Padu
+            Azmeer AI • Sora 2.0 Studio
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter mb-4">
             SORA <span className="text-cyan-500">2.0</span>
           </h2>
           <p className="text-slate-500 max-w-lg text-sm font-medium leading-relaxed">
-            Hampa boleh buat T2V (Text) atau I2V (Image) guna link gambar. Biar azmeer ai buatkan video realistik paling power untuk hampa.
+            Hampa boleh buat T2V (Text-to-Video) atau upload gambar untuk I2V (Image-to-Video). Video realistik 720p HD Ready.
           </p>
         </header>
 
@@ -77,18 +96,51 @@ const SoraStudioView: React.FC = () => {
               
               <div className="space-y-6">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Link Gambar (I2V - Optional)</label>
-                  <input
-                    type="text"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder="Masukkan URL gambar (jpg/png) kat sini..."
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-cyan-500/50 transition-all placeholder:text-slate-700 font-medium"
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Upload Gambar (I2V)</label>
+                  {!filePreview ? (
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full border-2 border-dashed border-slate-800 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all group"
+                    >
+                      <svg className="w-10 h-10 text-slate-700 group-hover:text-cyan-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-xs font-bold text-slate-500 group-hover:text-slate-300">Pilih gambar hampa kat sini...</span>
+                    </div>
+                  ) : (
+                    <div className="relative rounded-2xl overflow-hidden aspect-video border border-slate-800 group/preview">
+                      <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/preview:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                        <button 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="bg-white/10 hover:bg-white/20 backdrop-blur-md p-3 rounded-full text-white transition-all"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                        <button 
+                          onClick={clearFile}
+                          className="bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md p-3 rounded-full text-red-500 transition-all"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange} 
+                    accept="image/*" 
+                    className="hidden" 
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Directorial Prompt (T2V)</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Directorial Prompt</label>
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
@@ -117,7 +169,7 @@ const SoraStudioView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Nisbah (Ratio)</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Ratio</label>
                   <div className="flex bg-slate-950 rounded-xl p-1 gap-1 border border-slate-800">
                     <button
                       onClick={() => setAspectRatio('landscape')}
@@ -141,7 +193,7 @@ const SoraStudioView: React.FC = () => {
 
               <div className="mt-6 flex items-center justify-between px-2">
                 <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Resolusi</span>
-                <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">720p (HD Ready)</span>
+                <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">720P (HD READY)</span>
               </div>
 
               <button
@@ -219,7 +271,7 @@ const SoraStudioView: React.FC = () => {
               <span className="w-1 h-1 rounded-full bg-slate-800"></span>
               <span>Physics Aware</span>
               <span className="w-1 h-1 rounded-full bg-slate-800"></span>
-              <span>Temporal Continuity</span>
+              <span>HD 720p Resolution</span>
             </div>
           </div>
         </div>
