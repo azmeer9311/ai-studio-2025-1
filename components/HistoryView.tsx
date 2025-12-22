@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAllHistory } from '../services/geminiService';
 import { SoraHistoryItem } from '../types';
@@ -13,23 +12,22 @@ const HistoryView: React.FC = () => {
     setError(null);
     try {
       const data = await getAllHistory(1, 50);
-      if (data && data.success && data.result) {
+      if (data && data.result) {
         // Filter for video types or sora models
         const videoHistory = data.result.filter((item: SoraHistoryItem) => 
           item.type === 'video' || 
-          item.model_name.toLowerCase().includes('sora')
+          item.model_name.toLowerCase().includes('sora') ||
+          item.type === 'video_generation'
         );
         setHistory(videoHistory);
-      } else if (data && data.result) {
-        // Fallback if success flag is missing but result is there
-        setHistory(data.result);
       } else {
         setHistory([]);
       }
     } catch (err: any) {
       console.error("Gagal sync history:", err);
-      if (err.message === 'Failed to fetch') {
-        setError("Masalah Rangkaian: Pelayar menyekat akses ke API (CORS) atau talian internet hampa tak stabil. Cuba refresh sat lagi.");
+      // 'Failed to fetch' is almost always a CORS or connectivity issue in the browser
+      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+        setError("Masalah Sekatan Pelayar (CORS): Server Geminigen.AI mungkin tidak membenarkan permintaan dari domain ini buat masa sekarang, atau talian internet hampa disekat oleh AdBlocker/Firewall.");
       } else {
         setError(`Ralat: ${err.message || 'Sesuatu yang tak dijangka berlaku.'}`);
       }
@@ -104,13 +102,16 @@ const HistoryView: React.FC = () => {
             </div>
             <div className="max-w-md px-6">
               <p className="text-rose-500 font-black uppercase tracking-widest">Adoi! Gagal Sedut Data</p>
-              <p className="text-xs text-slate-500 mt-2 font-bold italic leading-relaxed">{error}</p>
-              <button 
-                onClick={fetchHistory}
-                className="mt-8 px-6 py-3 rounded-xl border border-rose-500/30 text-rose-500 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all shadow-lg shadow-rose-500/10"
-              >
-                Cuba Sekali Lagi
-              </button>
+              <p className="text-xs text-slate-400 mt-4 font-bold leading-relaxed">{error}</p>
+              <div className="mt-8 flex flex-col gap-3">
+                <button 
+                  onClick={fetchHistory}
+                  className="px-6 py-3 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-400 transition-all shadow-lg"
+                >
+                  Cuba Lagi
+                </button>
+                <p className="text-[9px] text-slate-600 font-bold italic uppercase">Tips: Matikan AdBlocker atau VPN jika ada.</p>
+              </div>
             </div>
           </div>
         ) : history.length === 0 ? (

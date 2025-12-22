@@ -1,16 +1,23 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 
 /**
- * Standardized fetch helper to handle common network issues and CORS.
- * Refined to be as simple as possible to avoid pre-flight failures.
+ * Standardized fetch helper refined for maximum CORS compatibility.
+ * By moving the API key to the query string ('key' or 'api_key'), we can 
+ * sometimes avoid the custom 'x-api-key' header which triggers OPTIONS pre-flight.
  */
 async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 2) {
+  // Ensure the URL has the key as a query parameter for safety
+  const urlObj = new URL(url);
+  if (!urlObj.searchParams.has('key')) urlObj.searchParams.set('key', GEMINIGEN_KEY);
+  if (!urlObj.searchParams.has('api_key')) urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
+
   const config: RequestInit = {
     ...options,
+    // We keep the header just in case the server strictly requires it, 
+    // but the query param is our fallback to bypass CORS header restrictions.
     headers: {
       'x-api-key': GEMINIGEN_KEY,
       'Accept': 'application/json',
@@ -19,7 +26,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 
   };
 
   try {
-    const response = await fetch(url, config);
+    const response = await fetch(urlObj.toString(), config);
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
       throw new Error(errorBody?.detail?.message || `API Error: ${response.status}`);
@@ -27,8 +34,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 
     return await response.json();
   } catch (err: any) {
     if (retries > 0 && (err.name === 'TypeError' || err.message === 'Failed to fetch')) {
-      // Wait before retry for transient network issues
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
       return fetchWithRetry(url, options, retries - 1);
     }
     throw err;
@@ -55,8 +61,9 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  // Use simple fetch for multipart to let browser handle boundary
-  const response = await fetch(`${GEMINIGEN_BASE_URL}/video-gen/sora`, {
+  // Use the query param for POST as well to help with CORS pre-flight
+  const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?key=${GEMINIGEN_KEY}`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'x-api-key': GEMINIGEN_KEY,
@@ -75,13 +82,12 @@ export const generateSoraVideo = async (params: {
  * GEMINIGEN.AI HISTORY APIS
  */
 export const getAllHistory = async (page = 1, itemsPerPage = 20) => {
-  // Use both header and query param to maximize compatibility across different network environments
-  const url = `${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&api_key=${GEMINIGEN_KEY}`;
+  const url = `${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
   return fetchWithRetry(url, { method: 'GET' });
 };
 
 export const getSpecificHistory = async (uuid: string) => {
-  const url = `${GEMINIGEN_BASE_URL}/history/${uuid}?api_key=${GEMINIGEN_KEY}`;
+  const url = `${GEMINIGEN_BASE_URL}/history/${uuid}`;
   return fetchWithRetry(url, { method: 'GET' });
 };
 
