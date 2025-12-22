@@ -1,23 +1,15 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { generateSoraVideo, getSpecificHistory } from '../services/geminiService';
 
 const SoraStudioView: React.FC = () => {
   const [prompt, setPrompt] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [duration, setDuration] = useState<10 | 15 | 25>(10);
-  const [resolution, setResolution] = useState<'small' | 'large'>('small');
+  const [duration, setDuration] = useState<10 | 15>(10);
   const [aspectRatio, setAspectRatio] = useState<'landscape' | 'portrait'>('landscape');
-
-  // Specs: sora-2 (10/15s small), sora-2-pro (25s small), sora-2-pro-hd (15s large)
-  // We automatically adjust resolution based on duration/user input to match API requirements
-  useEffect(() => {
-    if (duration === 25) {
-      setResolution('small');
-    }
-  }, [duration]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -29,8 +21,8 @@ const SoraStudioView: React.FC = () => {
       const { uuid } = await generateSoraVideo({
         prompt,
         duration,
-        resolution,
-        aspect_ratio: aspectRatio
+        aspect_ratio: aspectRatio,
+        imageUrl: imageUrl.trim() || undefined
       });
       
       const poll = async () => {
@@ -43,14 +35,15 @@ const SoraStudioView: React.FC = () => {
             setIsGenerating(false);
             setProgress(100);
           } else if (result.status === 3) {
-            throw new Error(result.error_message || "Adoi, generation gagal. Cuba prompt lain jap.");
+            throw new Error(result.error_message || "Adoi, generation gagal. Mungkin prompt tak kena atau credit tak cukup.");
           } else {
+            // Smooth progress simulation based on API percentage
             setProgress(result.status_percentage || progress + 1);
             setTimeout(poll, 5000);
           }
         } catch (e: any) {
           setIsGenerating(false);
-          alert(e.message || "Something went wrong.");
+          alert(e.message || "Adoi, something went wrong.");
         }
       };
       
@@ -58,7 +51,7 @@ const SoraStudioView: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       setIsGenerating(false);
-      alert(error.message || "Sora generation failed. Sila check credit atau prompt.");
+      alert(error.message || "Sora generation failed. Sila check credit atau link gambar hampa.");
     }
   };
 
@@ -73,7 +66,7 @@ const SoraStudioView: React.FC = () => {
             SORA <span className="text-cyan-500">2.0</span>
           </h2>
           <p className="text-slate-500 max-w-lg text-sm font-medium leading-relaxed">
-            Tulis je apa hampa nak, biar azmeer ai buatkan video realistik guna teknologi Sora 2.0 yang paling power.
+            Hampa boleh buat T2V (Text) atau I2V (Image) guna link gambar. Biar azmeer ai buatkan video realistik paling power untuk hampa.
           </p>
         </header>
 
@@ -82,19 +75,34 @@ const SoraStudioView: React.FC = () => {
             <div className="bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800/50 p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent"></div>
               
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Prompt Directorial</label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Contoh: Drone shot terbang kat tengah bandar Kuala Lumpur tahun 2077, penuh lampu neon..."
-                className="w-full h-48 bg-slate-950/80 border border-slate-800 rounded-2xl p-6 text-sm text-slate-200 outline-none focus:border-cyan-500/50 transition-all resize-none placeholder:text-slate-700 leading-relaxed font-medium"
-              />
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Link Gambar (I2V - Optional)</label>
+                  <input
+                    type="text"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="Masukkan URL gambar (jpg/png) kat sini..."
+                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-cyan-500/50 transition-all placeholder:text-slate-700 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Directorial Prompt (T2V)</label>
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Contoh: Drone shot terbang kat tengah bandar Kuala Lumpur tahun 2077, penuh lampu neon..."
+                    className="w-full h-32 bg-slate-950/80 border border-slate-800 rounded-2xl p-6 text-sm text-slate-200 outline-none focus:border-cyan-500/50 transition-all resize-none placeholder:text-slate-700 leading-relaxed font-medium"
+                  />
+                </div>
+              </div>
               
               <div className="grid grid-cols-2 gap-6 mt-8">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Duration</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Durasi</label>
                   <div className="flex bg-slate-950 rounded-xl p-1 gap-1 border border-slate-800">
-                    {[10, 15, 25].map((d) => (
+                    {[10, 15].map((d) => (
                       <button
                         key={d}
                         onClick={() => setDuration(d as any)}
@@ -109,7 +117,7 @@ const SoraStudioView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Aspect Ratio</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Nisbah (Ratio)</label>
                   <div className="flex bg-slate-950 rounded-xl p-1 gap-1 border border-slate-800">
                     <button
                       onClick={() => setAspectRatio('landscape')}
@@ -131,34 +139,15 @@ const SoraStudioView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-6">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Resolution</label>
-                <div className="flex bg-slate-950 rounded-xl p-1 gap-1 border border-slate-800">
-                  <button
-                    onClick={() => setResolution('small')}
-                    className={`flex-1 py-2 text-[10px] font-black rounded-lg transition-all ${
-                      resolution === 'small' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    720P
-                  </button>
-                  <button
-                    disabled={duration === 25}
-                    onClick={() => setResolution('large')}
-                    className={`flex-1 py-2 text-[10px] font-black rounded-lg transition-all disabled:opacity-20 ${
-                      resolution === 'large' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    1080P
-                  </button>
-                </div>
-                {duration === 25 && <p className="text-[9px] text-yellow-500/50 mt-2 font-bold uppercase tracking-wider text-center">Note: 25s only supports 720p</p>}
+              <div className="mt-6 flex items-center justify-between px-2">
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Resolusi</span>
+                <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">720p (HD Ready)</span>
               </div>
 
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating || !prompt.trim()}
-                className="w-full mt-10 bg-white text-slate-950 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 py-5 rounded-[1.5rem] font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95"
+                className="w-full mt-8 bg-white text-slate-950 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 py-5 rounded-[1.5rem] font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95"
               >
                 {isGenerating ? (
                   <div className="flex items-center gap-3">
@@ -219,10 +208,18 @@ const SoraStudioView: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-white font-black uppercase tracking-widest text-sm mb-1">Preview Kat Sini</p>
-                    <p className="text-xs text-slate-500 font-bold">Tulis prompt kat sebelah pastu klik generate k!</p>
+                    <p className="text-xs text-slate-500 font-bold italic">Tulis prompt kat sebelah pastu klik generate k!</p>
                   </div>
                 </div>
               )}
+            </div>
+            
+            <div className="mt-8 flex items-center justify-center gap-4 text-[10px] font-black text-slate-600 uppercase tracking-widest">
+              <span>Model: Sora 2</span>
+              <span className="w-1 h-1 rounded-full bg-slate-800"></span>
+              <span>Physics Aware</span>
+              <span className="w-1 h-1 rounded-full bg-slate-800"></span>
+              <span>Temporal Continuity</span>
             </div>
           </div>
         </div>

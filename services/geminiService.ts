@@ -10,36 +10,28 @@ const headers = {
 
 /**
  * GEMINIGEN.AI SORA VIDEO GENERATION
- * Adheres to multipart/form-data requirements and model specs.
+ * Adheres to multipart/form-data requirements for Sora 2 (T2V & I2V).
  */
 export const generateSoraVideo = async (params: {
   prompt: string;
-  duration: 10 | 15 | 25;
-  resolution: 'small' | 'large';
+  duration: 10 | 15;
   aspect_ratio: 'landscape' | 'portrait';
+  imageUrl?: string; // Support for I2V
 }) => {
   const formData = new FormData();
   formData.append('prompt', params.prompt);
-  
-  // Model Logic per documentation:
-  // sora-2: 10s or 15s (small)
-  // sora-2-pro: 25s (small)
-  // sora-2-pro-hd: 15s (large)
-  let modelName = 'sora-2';
-  if (params.duration === 25) {
-    modelName = 'sora-2-pro';
-  } else if (params.resolution === 'large') {
-    modelName = 'sora-2-pro-hd';
-  }
-  
-  formData.append('model', modelName);
+  formData.append('model', 'sora-2'); // Fixed to sora-2
   formData.append('duration', params.duration.toString());
-  formData.append('resolution', params.resolution);
+  formData.append('resolution', 'small'); // Fixed to 720p (small)
   formData.append('aspect_ratio', params.aspect_ratio);
+  
+  if (params.imageUrl) {
+    formData.append('file_urls', params.imageUrl);
+  }
 
   const response = await fetch(`${GEMINIGEN_BASE_URL}/video-gen/sora`, {
     method: 'POST',
-    headers: headers, // Fetch handles boundary for FormData
+    headers: headers,
     body: formData,
   });
 
@@ -55,7 +47,6 @@ export const generateSoraVideo = async (params: {
  * GEMINIGEN.AI HISTORY APIS
  */
 
-// Fetch all histories with pagination
 export const getAllHistory = async (page = 1, itemsPerPage = 20) => {
   const response = await fetch(`${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`, {
     method: 'GET',
@@ -66,7 +57,6 @@ export const getAllHistory = async (page = 1, itemsPerPage = 20) => {
   return response.json();
 };
 
-// Polling: Get detailed info for a specific conversion
 export const getSpecificHistory = async (uuid: string) => {
   const response = await fetch(`${GEMINIGEN_BASE_URL}/history/${uuid}`, {
     method: 'GET',
@@ -78,7 +68,7 @@ export const getSpecificHistory = async (uuid: string) => {
 };
 
 /**
- * GOOGLE GENAI SDK (For secondary features like Chat/TTS)
+ * GOOGLE GENAI SDK UTILITIES
  */
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -106,12 +96,8 @@ export const generateTTS = async (text: string) => {
   return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 };
 
-/**
- * GOOGLE GENAI IMAGE GENERATION
- */
-// Fix for components/ImageLabView.tsx: generateImage
-export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16") => {
-  // Always create instance with latest API KEY from process.env
+// Fix: Add missing generateImage function using gemini-2.5-flash-image
+export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" = "1:1") => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
@@ -122,24 +108,20 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
       }
     }
   });
-
-  const candidate = response.candidates?.[0];
-  if (candidate?.content?.parts) {
-    for (const part of candidate.content.parts) {
+  
+  const candidates = response.candidates;
+  if (candidates && candidates.length > 0) {
+    for (const part of candidates[0].content.parts) {
       if (part.inlineData) {
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
   }
-  throw new Error("Gagal generate image.");
+  throw new Error("Gagal generate gambar.");
 };
 
-/**
- * GOOGLE GENAI VIDEO GENERATION (VEO)
- */
-// Fix for components/VideoStudioView.tsx: startVideoGeneration
+// Fix: Add missing startVideoGeneration function using veo-3.1-fast-generate-preview
 export const startVideoGeneration = async (prompt: string) => {
-  // Always create instance with latest API KEY from process.env
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   return await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
@@ -152,26 +134,21 @@ export const startVideoGeneration = async (prompt: string) => {
   });
 };
 
-// Fix for components/VideoStudioView.tsx: checkVideoStatus
+// Fix: Add missing checkVideoStatus function for polling video operations
 export const checkVideoStatus = async (operation: any) => {
-  // Always create instance with latest API KEY from process.env
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  return await ai.operations.getVideosOperation({ operation: operation });
+  return await ai.operations.getVideosOperation({ operation });
 };
 
-// Fix for components/VideoStudioView.tsx: fetchVideoContent
+// Fix: Add missing fetchVideoContent function to download MP4 bytes with API Key
 export const fetchVideoContent = async (uri: string) => {
   const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
-  if (!response.ok) throw new Error("Gagal ambil content video.");
+  if (!response.ok) throw new Error("Gagal memuat turun video.");
   const blob = await response.blob();
   return URL.createObjectURL(blob);
 };
 
-/**
- * UTILITIES
- */
-
-// Fix for components/LiveOmniView.tsx: encodeBase64
+// Fix: Add missing encodeBase64 function for Live API audio streaming
 export function encodeBase64(bytes: Uint8Array) {
   let binary = '';
   const len = bytes.byteLength;
