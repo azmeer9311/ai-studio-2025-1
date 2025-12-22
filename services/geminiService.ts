@@ -5,31 +5,34 @@ const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 
 /**
  * Standardized fetch helper refined for maximum CORS compatibility.
- * By moving the API key to the query string ('key' or 'api_key'), we can 
- * sometimes avoid the custom 'x-api-key' header which triggers OPTIONS pre-flight.
+ * Uses a CORS proxy for geminigen.ai requests to bypass browser restrictions.
  */
 async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 2) {
-  // Ensure the URL has the key as a query parameter for safety
   const urlObj = new URL(url);
-  if (!urlObj.searchParams.has('key')) urlObj.searchParams.set('key', GEMINIGEN_KEY);
-  if (!urlObj.searchParams.has('api_key')) urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
+  // Ensure authentication is present in query string for proxy compatibility.
+  // Using 'api_key' is the standard for this specific API.
+  urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
+
+  // Prepend CORS proxy to bypass "Failed to fetch" CORS errors
+  const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(urlObj.toString())}`;
 
   const config: RequestInit = {
     ...options,
-    // We keep the header just in case the server strictly requires it, 
-    // but the query param is our fallback to bypass CORS header restrictions.
     headers: {
-      'x-api-key': GEMINIGEN_KEY,
       'Accept': 'application/json',
+      // We avoid custom headers like 'x-api-key' here because we've moved it to query params
+      // and some proxies/servers reject multiple auth methods or trigger pre-flights.
       ...options.headers,
     }
   };
 
   try {
-    const response = await fetch(urlObj.toString(), config);
+    const response = await fetch(proxiedUrl, config);
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody?.detail?.message || `API Error: ${response.status}`);
+      // Provide detailed error message if available from server
+      const msg = errorBody?.detail?.message || errorBody?.message || `API Error: ${response.status}`;
+      throw new Error(msg);
     }
     return await response.json();
   } catch (err: any) {
@@ -61,13 +64,12 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  // Use the query param for POST as well to help with CORS pre-flight
-  const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?key=${GEMINIGEN_KEY}`;
-  const response = await fetch(url, {
+  // Proxied POST request for Sora generation
+  const url = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
+  const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  
+  const response = await fetch(proxiedUrl, {
     method: 'POST',
-    headers: {
-      'x-api-key': GEMINIGEN_KEY,
-    },
     body: formData
   });
 
@@ -82,7 +84,9 @@ export const generateSoraVideo = async (params: {
  * GEMINIGEN.AI HISTORY APIS
  */
 export const getAllHistory = async (page = 1, itemsPerPage = 20) => {
-  const url = `${GEMINIGEN_BASE_URL}/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
+  // Removed filter_by=all as it can sometimes cause 400 errors if not supported by the specific endpoint version.
+  // Standardized to items_per_page=20 to stay within common API limits.
+  const url = `${GEMINIGEN_BASE_URL}/histories?items_per_page=${itemsPerPage}&page=${page}`;
   return fetchWithRetry(url, { method: 'GET' });
 };
 

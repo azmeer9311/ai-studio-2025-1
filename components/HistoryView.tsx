@@ -11,12 +11,17 @@ const HistoryView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAllHistory(1, 50);
-      if (data && data.result) {
+      // Reduced from 50 to 20 to avoid potential 400 Bad Request errors from server limits
+      const data = await getAllHistory(1, 20);
+      
+      // Handle various response structures
+      const items = data?.result || data?.data || (Array.isArray(data) ? data : []);
+      
+      if (items && Array.isArray(items)) {
         // Filter for video types or sora models
-        const videoHistory = data.result.filter((item: SoraHistoryItem) => 
+        const videoHistory = items.filter((item: SoraHistoryItem) => 
           item.type === 'video' || 
-          item.model_name.toLowerCase().includes('sora') ||
+          (item.model_name && item.model_name.toLowerCase().includes('sora')) ||
           item.type === 'video_generation'
         );
         setHistory(videoHistory);
@@ -25,9 +30,10 @@ const HistoryView: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Gagal sync history:", err);
-      // 'Failed to fetch' is almost always a CORS or connectivity issue in the browser
-      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-        setError("Masalah Sekatan Pelayar (CORS): Server Geminigen.AI mungkin tidak membenarkan permintaan dari domain ini buat masa sekarang, atau talian internet hampa disekat oleh AdBlocker/Firewall.");
+      if (err.message.includes('400')) {
+        setError("Ralat 400: Permintaan data ditolak oleh server. Parameter mungkin tidak sah atau limit server dicapai.");
+      } else if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+        setError("Masalah Rangkaian: Pelayar menyekat akses ke API (CORS) atau talian internet hampa tak stabil.");
       } else {
         setError(`Ralat: ${err.message || 'Sesuatu yang tak dijangka berlaku.'}`);
       }
@@ -110,7 +116,7 @@ const HistoryView: React.FC = () => {
                 >
                   Cuba Lagi
                 </button>
-                <p className="text-[9px] text-slate-600 font-bold italic uppercase">Tips: Matikan AdBlocker atau VPN jika ada.</p>
+                <p className="text-[9px] text-slate-600 font-bold italic uppercase">Tips: Matikan VPN atau AdBlocker jika ralat berterusan.</p>
               </div>
             </div>
           </div>
@@ -165,7 +171,7 @@ const HistoryView: React.FC = () => {
                     
                     <div className="absolute top-4 left-4">
                        <span className="bg-black/60 backdrop-blur-md text-[9px] font-black text-white px-3 py-1.5 rounded-full border border-white/10 uppercase tracking-widest">
-                         {item.model_name}
+                         {item.model_name || 'Sora'}
                        </span>
                     </div>
                   </div>
