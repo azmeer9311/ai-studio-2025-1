@@ -11,10 +11,9 @@ const HistoryView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      // Reduced from 50 to 20 to avoid potential 400 Bad Request errors from server limits
       const data = await getAllHistory(1, 20);
       
-      // Handle various response structures
+      // Handle various response structures: result, data, or top-level array
       const items = data?.result || data?.data || (Array.isArray(data) ? data : []);
       
       if (items && Array.isArray(items)) {
@@ -31,9 +30,9 @@ const HistoryView: React.FC = () => {
     } catch (err: any) {
       console.error("Gagal sync history:", err);
       if (err.message.includes('400')) {
-        setError("Ralat 400: Permintaan data ditolak oleh server. Parameter mungkin tidak sah atau limit server dicapai.");
+        setError("Ralat 400: Permintaan ditolak. Server memerlukan parameter 'filter_by=all' atau API key tidak disokong melalui proxy.");
       } else if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-        setError("Masalah Rangkaian: Pelayar menyekat akses ke API (CORS) atau talian internet hampa tak stabil.");
+        setError("Masalah Rangkaian: Pelayar menyekat akses ke API (CORS). Kami sedang cuba memintas masalah ini.");
       } else {
         setError(`Ralat: ${err.message || 'Sesuatu yang tak dijangka berlaku.'}`);
       }
@@ -116,7 +115,7 @@ const HistoryView: React.FC = () => {
                 >
                   Cuba Lagi
                 </button>
-                <p className="text-[9px] text-slate-600 font-bold italic uppercase">Tips: Matikan VPN atau AdBlocker jika ralat berterusan.</p>
+                <p className="text-[9px] text-slate-600 font-bold italic uppercase">Tips: Kami sedang menggunakan proxy untuk memintas ralat 400.</p>
               </div>
             </div>
           </div>
