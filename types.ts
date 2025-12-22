@@ -4,41 +4,45 @@ export enum AppView {
   HISTORY = 'HISTORY'
 }
 
+/**
+ * Interface representing a single message in a chat conversation.
+ */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  content: string;
+  timestamp: number;
+}
+
+export interface GeneratedVideo {
+  id: number;
+  uuid: string;
+  history_id: number;
+  video_uri: string;
+  duration: number;
+  aspect_ratio: string;
+  resolution: string;
+  status: number;
+  video_url: string;
+  error_message?: string;
+}
+
 export interface SoraHistoryItem {
   id: number;
   uuid: string;
   user_id: number;
   model_name: string;
   input_text: string;
-  type: string; // e.g., "video", "image_generation"
+  type: string;
   status: number; // 1: processing, 2: completed, 3: failed
   status_desc: string;
   status_percentage: number;
-  generate_result: string | null; // Primary URL for generated media
+  generate_result: string | null;
   thumbnail_url: string | null;
   created_at: string;
   updated_at: string | null;
   error_code?: string;
   error_message?: string;
-  generated_video?: Array<{
-    id: number;
-    uuid: string;
-    video_url: string;
-    duration: number;
-    aspect_ratio: string;
-    resolution: string;
-    status: number;
-  }>;
-  generated_image?: Array<{
-    id: number;
-    image_url: string;
-    aspect_ratio: string;
-  }>;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'model';
-  content: string;
-  timestamp: number;
+  generated_video?: GeneratedVideo[];
+  inference_type?: string;
 }
