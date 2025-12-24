@@ -17,14 +17,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
-    if (item.generated_video && item.generated_video.length > 0) {
+    // Dokumen menunjukkan URL berada dalam generated_video array
+    if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const vid = item.generated_video[0];
       return vid.video_url || vid.video_uri || '';
     }
+    // Fallback jika dalam format generate_result string
     if (item.generate_result && typeof item.generate_result === 'string') {
-      if (item.generate_result.startsWith('http') || !item.generate_result.includes('{')) {
-        return item.generate_result;
-      }
+      if (item.generate_result.startsWith('http')) return item.generate_result;
       try {
         const parsed = JSON.parse(item.generate_result);
         if (Array.isArray(parsed) && parsed[0]?.video_url) return parsed[0].video_url;
@@ -42,31 +42,27 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // FILTER LOGIC:
-        // 1. Mesti jenis video/sora.
-        // 2. Mesti user_id yang sama dengan userProfile.id (Self-only).
-        // HAD MASA 3 JAM DIBUANG ATAS PERMINTAAN USER.
         const filteredItems = items.filter((item: any) => {
           const isVideo = item.type?.toLowerCase().includes('video') || 
                           item.model_name?.toLowerCase().includes('sora');
-          
           const isMine = item.user_id?.toString() === userProfile.id.toString();
-
           return isVideo && isMine;
         });
         
         setHistory(filteredItems);
 
-        // Sentiasa poll jika ada video tengah "Rendering"
+        // Jika ada status 1 (Processing), teruskan polling
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
-        pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 5000);
+        if (hasActiveTasks || filteredItems.length > 0) {
+           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 8000);
+        }
       } else {
         setHistory([]);
       }
     } catch (err: any) {
       console.error("Gagal sync vault:", err);
-      if (showLoading) setError("Gagal memuatkan rekod arkib dari Geminigen.ai.");
+      if (showLoading) setError("Gagal memuatkan rekod arkib. Masalah rangkaian dikesan.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -74,9 +70,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     fetchHistory(true);
-    const retryInitial = setTimeout(() => fetchHistory(false), 2000);
     return () => {
-      clearTimeout(retryInitial);
       if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
     };
   }, [fetchHistory]);
@@ -89,7 +83,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
 
-      if (!url || !url.startsWith('http')) {
+      // Jika URL tak ada, tarik details spesifik
+      if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
@@ -97,8 +92,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
 
       if (url) {
-        const blobUrl = await fetchVideoAsBlob(url);
-        setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
+        const videoLink = await fetchVideoAsBlob(url);
+        setActiveVideo(prev => ({ ...prev, [uuid]: videoLink }));
       } else {
         throw new Error("Punca media tidak dijumpai.");
       }
@@ -116,16 +111,16 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     
     try {
       let url = resolveVideoUrl(item);
-      if (!url || !url.startsWith('http')) {
+      if (!url) {
         const details = await getSpecificHistory(uuid);
         url = resolveVideoUrl(details?.data || details?.result || details);
       }
 
       if (url) {
-        const blobUrl = await fetchVideoAsBlob(url);
         const a = document.createElement('a');
-        a.href = blobUrl;
+        a.href = url;
         a.download = `azmeer-studio-${uuid}.mp4`;
+        a.target = "_blank";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -153,7 +148,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
               Vault <span className="text-slate-800">Archive</span>
             </h2>
             <p className="mt-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-              Arkib kekal disimpan mengikut polisi Geminigen AI.
+              Arkib hampa disimpan selamat di Geminigen Cloud.
             </p>
           </div>
           
@@ -245,12 +240,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                   {/* Metadata Content */}
                   <div className="p-6 flex-1 flex flex-col">
                     <div className="flex justify-between items-start mb-4">
-                      <div className="font-mono text-[9px] text-slate-500 tracking-tighter uppercase">{item.uuid.substring(0, 13)}...</div>
-                      <div className="text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      <div className="font-mono text-[9px] text-slate-500 tracking-tighter uppercase">{item.uuid.substring(0, 8)}...</div>
+                      <div className="text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleDateString()}</div>
                     </div>
                     
                     <p className="text-slate-300 text-xs font-medium leading-relaxed line-clamp-3 mb-6 flex-1 italic">
-                      "{item.input_text || 'No prompt.'}"
+                      "{item.input_text || 'Tiada prompt.'}"
                     </p>
 
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
