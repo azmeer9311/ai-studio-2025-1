@@ -1,9 +1,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
-import { SoraHistoryItem } from '../types';
+import { SoraHistoryItem, UserProfile } from '../types';
 
-const HistoryView: React.FC = () => {
+interface HistoryViewProps {
+  userProfile: UserProfile;
+}
+
+const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const [history, setHistory] = useState<SoraHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -11,10 +15,6 @@ const HistoryView: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
   const pollingTimerRef = useRef<number | null>(null);
 
-  /**
-   * Mengekstrak URL video dari objek history yang kompleks.
-   * (Kekalkan logic sedia ada seperti diminta)
-   */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
     if (item.generated_video && item.generated_video.length > 0) {
@@ -34,32 +34,38 @@ const HistoryView: React.FC = () => {
     return '';
   };
 
-  /**
-   * Mengambil senarai history dari API.
-   * Ditambah cache-busting secara automatik melalui geminiService.
-   */
   const fetchHistory = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     
     try {
-      const response = await getAllHistory(1, 50);
+      const response = await getAllHistory(1, 100); // Ambil lebih banyak untuk filtering
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // Filter video - diperluaskan untuk pastikan Sora 2.0 tersenarai
-        const videoItems = items.filter((item: any) => 
-          item.type?.toLowerCase().includes('video') || 
-          item.model_name?.toLowerCase().includes('sora') ||
-          item.inference_type?.toLowerCase().includes('video')
-        );
-        
-        setHistory(videoItems);
+        const now = Date.now();
+        const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
 
-        // SYNC STRATEGY: Sentiasa poll jika ada video tengah "Rendering" (status 1)
-        // atau jika tab baru sahaja dibuka (untuk tangkap video yang baru di-submit)
-        const hasActiveTasks = videoItems.some(item => Number(item.status) === 1);
+        // FILTER LOGIC:
+        // 1. Mesti jenis video/sora.
+        // 2. Mesti user_id yang sama dengan userProfile.id (Self-only).
+        // 3. Mesti dijana kurang dari 3 jam yang lepas.
+        const filteredItems = items.filter((item: any) => {
+          const isVideo = item.type?.toLowerCase().includes('video') || 
+                          item.model_name?.toLowerCase().includes('sora');
+          
+          // Pastikan perbandingan ID adalah string-safe
+          const isMine = item.user_id?.toString() === userProfile.id.toString();
+          
+          const createdTime = new Date(item.created_at).getTime();
+          const isRecent = (now - createdTime) < THREE_HOURS_MS;
+
+          return isVideo && isMine && isRecent;
+        });
         
-        // Polling agresif setiap 5 saat untuk sync status real-time
+        setHistory(filteredItems);
+
+        // Sentiasa poll jika ada video tengah "Rendering"
+        const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 5000);
       } else {
@@ -71,16 +77,11 @@ const HistoryView: React.FC = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [userProfile.id]);
 
-  // Sync Vault pada permulaan
   useEffect(() => {
     fetchHistory(true);
-    
-    // PENTING: Jika pengguna baru sahaja menekan "Generate", 
-    // kita beri sedikit masa untuk API propagated data ke senarai histories.
     const retryInitial = setTimeout(() => fetchHistory(false), 2000);
-
     return () => {
       clearTimeout(retryInitial);
       if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
@@ -156,8 +157,11 @@ const HistoryView: React.FC = () => {
               <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.5em]">azmeer ai</p>
             </div>
             <h2 className="text-5xl font-black text-white tracking-tighter uppercase leading-none">
-              History <span className="text-slate-800">Vault</span>
+              Vault <span className="text-slate-800">History</span>
             </h2>
+            <p className="mt-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+              Media akan dipadam secara automatik selepas 3 jam.
+            </p>
           </div>
           
           <button 
@@ -168,7 +172,7 @@ const HistoryView: React.FC = () => {
             <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'Syncing Vault...' : 'Sync Vault'}
+            {loading ? 'Syncing...' : 'Refresh Vault'}
           </button>
         </header>
 
@@ -180,7 +184,7 @@ const HistoryView: React.FC = () => {
 
         {history.length === 0 && !loading ? (
           <div className="text-center py-40 border-2 border-dashed border-slate-900 rounded-[3rem] bg-slate-900/10">
-            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Arkib Vault Kosong.</p>
+            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Tiada media dalam 3 jam terakhir.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 pb-32">
@@ -249,7 +253,7 @@ const HistoryView: React.FC = () => {
                   <div className="p-6 flex-1 flex flex-col">
                     <div className="flex justify-between items-start mb-4">
                       <div className="font-mono text-[9px] text-slate-500 tracking-tighter uppercase">{item.uuid.substring(0, 13)}...</div>
-                      <div className="text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleDateString()}</div>
+                      <div className="text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                     </div>
                     
                     <p className="text-slate-300 text-xs font-medium leading-relaxed line-clamp-3 mb-6 flex-1 italic">

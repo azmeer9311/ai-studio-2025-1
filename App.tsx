@@ -41,7 +41,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (activeView) {
       case AppView.SORA_STUDIO: return <SoraStudioView onViewChange={setActiveView} userProfile={profile} />;
-      case AppView.HISTORY: return <HistoryView />;
+      case AppView.HISTORY: return <HistoryView userProfile={profile} />;
       case AppView.ADMIN_DASHBOARD: return <AdminDashboard />;
       default: return <SoraStudioView onViewChange={setActiveView} userProfile={profile} />;
     }
@@ -75,10 +75,10 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <nav className="flex px-4 pb-3 gap-2">
+          <nav className="flex px-4 pb-3 gap-2 overflow-x-auto no-scrollbar">
             <button 
               onClick={() => setActiveView(AppView.SORA_STUDIO)}
-              className={`flex-1 py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
+              className={`flex-1 min-w-[80px] py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
                 activeView === AppView.SORA_STUDIO ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
               }`}
             >
@@ -86,12 +86,22 @@ const App: React.FC = () => {
             </button>
             <button 
               onClick={() => setActiveView(AppView.HISTORY)}
-              className={`flex-1 py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
+              className={`flex-1 min-w-[80px] py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
                 activeView === AppView.HISTORY ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
               }`}
             >
               Vault
             </button>
+            {profile.is_admin && (
+              <button 
+                onClick={() => setActiveView(AppView.ADMIN_DASHBOARD)}
+                className={`flex-1 min-w-[80px] py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
+                  activeView === AppView.ADMIN_DASHBOARD ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
+                }`}
+              >
+                Admin
+              </button>
+            )}
           </nav>
         </header>
 

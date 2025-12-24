@@ -10,6 +10,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [userId, setUserId] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState(''); // State baru
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +25,13 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         await loginLocal(userId, password);
         onAuthSuccess();
       } else {
-        await signupLocal(userId, email, password);
+        if (!phone.trim()) throw new Error("No. Phone wajib diisi.");
+        await signupLocal(userId, email, password, phone);
         alert("Pendaftaran berjaya! Tunggu admin approve akaun hampa.");
         setIsLogin(true);
         setUserId('');
         setPassword('');
+        setPhone('');
       }
     } catch (err: any) {
       setError(err.message);
@@ -66,23 +69,36 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
               value={userId} 
               onChange={(e) => setUserId(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
-              placeholder="Contoh: user_id_hampa"
+              placeholder=""
               required
             />
           </div>
 
           {!isLogin && (
-            <div className="space-y-2">
-              <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Email Address</label>
-              <input 
-                type="email" 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
-                placeholder="Contoh: user@email.com"
-                required
-              />
-            </div>
+            <>
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Email Address</label>
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
+                  placeholder=""
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">No. Phone</label>
+                <input 
+                  type="tel" 
+                  value={phone} 
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
+                  placeholder="Contoh: 01123456789"
+                  required
+                />
+              </div>
+            </>
           )}
 
           <div className="space-y-2">

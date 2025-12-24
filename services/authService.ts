@@ -18,6 +18,7 @@ const getLocalUsers = (): UserProfile[] => {
       id: 'admin-uuid-001',
       username: ADMIN_ID,
       email: `${ADMIN_ID}@azmeer.ai`,
+      phone: '0123456789', // Default admin phone
       password: ADMIN_PW,
       is_approved: true,
       is_admin: true,
@@ -51,9 +52,9 @@ export const loginLocal = async (userId: string, password: string): Promise<User
 };
 
 /**
- * Sistem Sign Up (Baru: Limit bermula dari 0)
+ * Sistem Sign Up (Wajib letak No Phone)
  */
-export const signupLocal = async (userId: string, email: string, password: string): Promise<UserProfile> => {
+export const signupLocal = async (userId: string, email: string, password: string, phone: string): Promise<UserProfile> => {
   const users = getLocalUsers();
   
   if (users.find(u => u.username.toLowerCase() === userId.toLowerCase())) {
@@ -64,11 +65,12 @@ export const signupLocal = async (userId: string, email: string, password: strin
     id: `user-${Date.now()}`,
     username: userId,
     email: email,
+    phone: phone, // Medan wajib baru
     password: password,
     is_approved: false,
     is_admin: false,
-    video_limit: 0, // Kunci automatik bila daftar
-    image_limit: 0, // Kunci automatik bila daftar
+    video_limit: 0, 
+    image_limit: 0,
     videos_used: 0,
     images_used: 0,
     created_at: new Date().toISOString()
@@ -125,7 +127,6 @@ export const canGenerate = async (userId: string, type: 'video' | 'image'): Prom
   if (!user) return false;
   if (user.is_admin) return true;
   
-  // Mesti approved DAN ada limit
   if (!user.is_approved) return false;
   
   if (type === 'video') return user.videos_used < user.video_limit;

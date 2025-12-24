@@ -66,20 +66,21 @@ const AdminDashboard: React.FC = () => {
       </div>
 
       <div className="bg-slate-900/40 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl overflow-x-auto">
-        <table className="w-full text-left min-w-[1000px]">
+        <table className="w-full text-left min-w-[1100px]">
           <thead className="bg-slate-950 border-b border-slate-800">
             <tr>
               <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest">User ID</th>
               <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+              <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest">Phone</th>
               <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest">Password</th>
-              <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Video Usage (Limit)</th>
+              <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Usage (Limit)</th>
               <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {list.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-8 py-10 text-center text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+                <td colSpan={6} className="px-8 py-10 text-center text-[10px] text-slate-600 font-bold uppercase tracking-widest">
                   Tiada pengguna dalam senarai ini.
                 </td>
               </tr>
@@ -94,12 +95,15 @@ const AdminDashboard: React.FC = () => {
                     <div className="text-xs font-medium text-slate-300">{profile.email}</div>
                   </td>
                   <td className="px-8 py-6">
-                    <div className="text-xs font-mono text-cyan-400 bg-cyan-500/5 px-2 py-1 rounded inline-block">{profile.password}</div>
+                    <div className="text-xs font-bold text-cyan-400">{profile.phone || '-'}</div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="text-xs font-mono text-slate-400 bg-white/5 px-2 py-1 rounded inline-block">{profile.password}</div>
                   </td>
                   <td className="px-8 py-6 text-center">
                      <div className="flex flex-col items-center gap-2">
                        <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
-                         <span className="px-2 text-[9px] font-bold text-slate-600 border-r border-slate-800 bg-slate-900" title="Videos used">Used: {profile.videos_used}</span>
+                         <span className="px-2 text-[9px] font-bold text-slate-600 border-r border-slate-800 bg-slate-900" title="Videos used">V: {profile.videos_used}</span>
                          <input 
                            type="number" 
                            defaultValue={profile.video_limit}

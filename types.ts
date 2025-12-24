@@ -10,6 +10,7 @@ export interface UserProfile {
   id: string;
   username: string;
   email: string;
+  phone: string; // Medan baru wajib
   password?: string; // Hanya untuk paparan admin (Security Risk diabaikan atas permintaan user)
   is_approved: boolean;
   is_admin: boolean;
