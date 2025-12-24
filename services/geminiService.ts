@@ -48,10 +48,6 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   return cleanUrl;
 };
 
-/**
- * PENTING: Fungsi fetch yang dipertingkatkan untuk menangani 'Failed to fetch' 
- * akibat isu CORS atau masalah rangkaian dengan fallback ke proxy.
- */
 async function robustFetch(url: string, options: RequestInit = {}) {
   const headers = {
     'Accept': 'application/json',
@@ -63,7 +59,6 @@ async function robustFetch(url: string, options: RequestInit = {}) {
     const response = await fetch(url, { ...options, headers });
     if (response.ok) return response;
     
-    // Jika tidak OK, kita cuba huraikan ralat
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.message || `API Error: ${response.status}`);
   } catch (e: any) {
@@ -73,7 +68,6 @@ async function robustFetch(url: string, options: RequestInit = {}) {
 
     if (isNetworkError) {
       console.warn("Direct fetch failed, attempting proxy fallback for:", url);
-      // Proxy fallback (Hanya untuk GET, POST mungkin bermasalah dengan proxy tertentu)
       if (!options.method || options.method === 'GET') {
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
         try {
@@ -129,7 +123,12 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
-  return fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
+  // Mock history logic: Jika pangkalan data tiada, kita return data kosong supaya App tak crash
+  try {
+    return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
+  } catch (e) {
+    return { result: [] };
+  }
 };
 
 export const getSpecificHistory = async (uuid: string) => {
@@ -157,7 +156,6 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  // Gunakan robustFetch untuk POST Sora
   const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
 
   try {
@@ -172,13 +170,12 @@ export const generateSoraVideo = async (params: {
   } catch (e: any) {
     console.error("Sora Generation Error:", e);
     if (e.name === 'TypeError' || e.message?.includes('Failed to fetch')) {
-      throw new Error("Gagal menyambung ke API Sora. Masalah rangkaian atau CORS dikesan. Sila cuba lagi sebentar atau periksa sambungan internet hampa.");
+      throw new Error("Gagal menyambung ke API Sora. Masalah rangkaian atau CORS dikesan. Sila cuba lagi sebentar.");
     }
     throw e;
   }
 };
 
-// Fungsi untuk ChatView
 export const generateText = async (prompt: string) => {
   const apiKey = getGeminiApiKey();
   const ai = new GoogleGenAI({ apiKey });
@@ -245,7 +242,6 @@ export const decodeAudioData = async (
   return buffer;
 };
 
-// Fungsi untuk Image Lab
 export const generateImage = async (prompt: string, aspectRatio: string) => {
   const apiKey = getGeminiApiKey();
   const ai = new GoogleGenAI({ apiKey });
@@ -257,7 +253,6 @@ export const generateImage = async (prompt: string, aspectRatio: string) => {
     }
   });
   
-  // FIX: Menggunakan optional chaining dan check undefined untuk mengelakkan ralat TS di Vercel
   const candidates = response.candidates;
   if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
     for (const part of candidates[0].content.parts) {
@@ -270,7 +265,6 @@ export const generateImage = async (prompt: string, aspectRatio: string) => {
   throw new Error("Tiada imej yang dijana.");
 };
 
-// Fungsi untuk Video Studio (Veo)
 export const startVideoGeneration = async (prompt: string) => {
   const apiKey = getGeminiApiKey();
   const ai = new GoogleGenAI({ apiKey });
@@ -299,6 +293,6 @@ export const fetchVideoContent = async (uri: string) => {
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
-    throw new Error("Gagal memuatkan video Veo (CORS/Network error).");
+    throw new Error("Gagal memuatkan video Veo.");
   }
 };
