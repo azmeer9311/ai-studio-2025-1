@@ -18,13 +18,13 @@ const App: React.FC = () => {
   const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
       if (session) fetchProfile(session.user.id);
       else setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       setSession(session);
       if (session) fetchProfile(session.user.id);
       else {

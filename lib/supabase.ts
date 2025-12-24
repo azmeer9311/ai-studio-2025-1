@@ -1,3 +1,5 @@
+
+// @ts-ignore
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 
 // Deklarasi global untuk mengelakkan ralat TS dengan process.env (Vite define)
