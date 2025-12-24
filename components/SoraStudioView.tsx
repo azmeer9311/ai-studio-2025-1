@@ -147,7 +147,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             UGC <span className="text-cyan-500">STUDIO</span>
           </h2>
           <p className="text-slate-500 max-w-lg text-sm font-medium leading-relaxed">
-            Hampa taip je info produk, biar AI kami (GPT-4o) jana prompt video 15 saat gaya influencer.
+            Hampa taip je info produk, biar AI kami jana prompt video 15 saat gaya influencer.
           </p>
         </header>
 
@@ -168,7 +168,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                  <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI UGC Wizard</h3>
                  <div className="flex items-center gap-2">
                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
-                   <span className="text-[8px] font-bold text-slate-500 uppercase">GPT-4o Mini Active</span>
+                   <span className="text-[8px] font-bold text-slate-500 uppercase">AI Core Active</span>
                  </div>
               </div>
 

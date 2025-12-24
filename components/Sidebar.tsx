@@ -27,6 +27,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, userProfile
     window.location.reload();
   };
 
+  const bakiVideo = userProfile?.is_admin ? 'UNLIMITED' : ((userProfile?.video_limit || 0) - (userProfile?.videos_used || 0));
+
   return (
     <aside className="hidden md:flex w-72 bg-[#020617] border-r border-slate-800/50 flex-col h-full shrink-0">
       <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
@@ -66,19 +68,23 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, userProfile
       </div>
 
       <div className="p-8 space-y-4">
-        <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
+        <div className="p-5 rounded-3xl bg-slate-900/40 border border-slate-800/60 shadow-xl">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Akses ID</span>
-            <span className="text-[9px] font-bold text-cyan-400 uppercase">{userProfile?.username}</span>
+            <span className="text-[9px] font-black text-white uppercase">{userProfile?.username}</span>
           </div>
-          <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest mb-3">
-            Video: {userProfile?.videos_used} / {userProfile?.is_admin ? '∞' : userProfile?.video_limit}
+          <div className="text-[10px] text-cyan-400 font-black uppercase tracking-widest mb-3 flex items-center justify-between">
+            <span>Baki Video</span>
+            <span className="bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">{bakiVideo}</span>
           </div>
-          <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
             <div 
-              className="bg-cyan-500 h-full transition-all duration-1000" 
-              style={{ width: userProfile?.is_admin ? '100%' : `${((userProfile?.videos_used || 0) / (userProfile?.video_limit || 1)) * 100}%` }}
+              className="bg-cyan-500 h-full transition-all duration-1000 shadow-[0_0_10px_rgba(34,211,238,0.5)]" 
+              style={{ width: userProfile?.is_admin ? '100%' : `${Math.min(100, (Math.max(0, (userProfile?.video_limit || 1) - (userProfile?.videos_used || 0)) / (userProfile?.video_limit || 1)) * 100)}%` }}
             ></div>
+          </div>
+          <div className="mt-2 text-[8px] text-slate-600 font-bold uppercase tracking-widest text-center">
+            {userProfile?.videos_used} Guna / {userProfile?.is_admin ? '∞' : userProfile?.video_limit} Total
           </div>
         </div>
 

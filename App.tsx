@@ -55,17 +55,16 @@ const App: React.FC = () => {
         <header className="md:hidden flex flex-col bg-[#020617] border-b border-slate-800/50 z-20">
           <div className="flex items-center justify-between p-4 px-5">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 relative flex items-center justify-center">
+              <div className="w-10 h-10 relative flex items-center justify-center">
                 <div className="absolute inset-0 bg-cyan-500/20 blur-lg rounded-full animate-pulse"></div>
                 <img src={logoUrl} alt="Logo" className="w-full h-full object-contain relative z-10 logo-glow-animate" />
               </div>
               <div>
                 <h1 className="text-sm font-black tracking-tighter text-white uppercase leading-none">azmeer</h1>
                 <p className="text-[8px] font-bold text-cyan-500 tracking-[0.2em] uppercase opacity-80 leading-none">ai studio</p>
-                <div className="mt-1 flex items-center gap-1.5">
-                  <div className="w-1 h-1 rounded-full bg-cyan-500 shadow-[0_0_5px_rgba(34,211,238,0.8)]"></div>
-                  <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
-                    V: {profile.videos_used}/{profile.is_admin ? '∞' : profile.video_limit}
+                <div className="mt-1.5 inline-flex items-center bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-md">
+                  <span className="text-[9px] font-black text-cyan-400 uppercase tracking-widest">
+                    BAKI: {profile.is_admin ? 'UNLIMITED' : (profile.video_limit - profile.videos_used)} VIDEO
                   </span>
                 </div>
               </div>
@@ -75,7 +74,7 @@ const App: React.FC = () => {
                 localStorage.removeItem('azmeer_studio_session');
                 window.location.reload();
               }} 
-              className="text-[8px] font-black text-rose-500 uppercase tracking-widest border border-rose-500/20 px-3 py-1.5 rounded-lg"
+              className="text-[9px] font-black text-rose-500 uppercase tracking-widest border border-rose-500/20 px-4 py-2 rounded-xl bg-rose-500/5"
             >
               Exit
             </button>
@@ -85,7 +84,7 @@ const App: React.FC = () => {
             <button 
               onClick={() => setActiveView(AppView.SORA_STUDIO)}
               className={`flex-1 min-w-[80px] py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
-                activeView === AppView.SORA_STUDIO ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
+                activeView === AppView.SORA_STUDIO ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.1)]' : 'bg-slate-900/50 border-slate-800 text-slate-500'
               }`}
             >
               Studio
@@ -93,7 +92,7 @@ const App: React.FC = () => {
             <button 
               onClick={() => setActiveView(AppView.HISTORY)}
               className={`flex-1 min-w-[80px] py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
-                activeView === AppView.HISTORY ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
+                activeView === AppView.HISTORY ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.1)]' : 'bg-slate-900/50 border-slate-800 text-slate-500'
               }`}
             >
               Vault
@@ -102,7 +101,7 @@ const App: React.FC = () => {
               <button 
                 onClick={() => setActiveView(AppView.ADMIN_DASHBOARD)}
                 className={`flex-1 min-w-[80px] py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
-                  activeView === AppView.ADMIN_DASHBOARD ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
+                  activeView === AppView.ADMIN_DASHBOARD ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.1)]' : 'bg-slate-900/50 border-slate-800 text-slate-500'
                 }`}
               >
                 Admin
