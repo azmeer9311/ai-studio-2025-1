@@ -19,23 +19,37 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     setLoading(true);
     setError(null);
 
+    const internalEmail = `${userId.trim().toLowerCase()}@azmeer.ai`;
+
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ username: userId, password });
+        const { error } = await supabase.auth.signInWithPassword({ 
+          email: internalEmail, 
+          password 
+        });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ 
-          username: userId,
-          email, 
+        // Pendaftaran
+        const { data, error: signUpError } = await supabase.auth.signUp({ 
+          email: internalEmail, 
           password,
           options: {
             data: {
+              username: userId,
+              real_email: email,
               video_limit: 5,
               image_limit: 10
             }
           }
         });
-        if (error) throw error;
+        
+        if (signUpError) throw signUpError;
+
+        // Manual insert password ke profile supaya admin boleh tengok
+        if (data.user) {
+          await supabase.from('profiles').update({ password }).eq('id', data.user.id);
+        }
+
         alert("Pendaftaran berjaya! Tunggu admin approve akaun hampa.");
         setIsLogin(true);
       }

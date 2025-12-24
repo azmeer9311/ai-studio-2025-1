@@ -17,22 +17,47 @@ const App: React.FC = () => {
 
   const fetchUserSession = async () => {
     setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const userProfile = await getProfile(session.user.id);
-      setProfile(userProfile);
-    } else {
+    try {
+      // Periksa jika URL placeholder digunakan (belum setup)
+      if (supabase.supabaseUrl.includes('placeholder.supabase.co')) {
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) throw sessionError;
+
+      if (session?.user) {
+        const userProfile = await getProfile(session.user.id);
+        setProfile(userProfile);
+      } else {
+        setProfile(null);
+      }
+    } catch (err) {
+      console.warn("Supabase connection issue (Failed to fetch). Hampa dah set VITE keys kat Vercel?", err);
       setProfile(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchUserSession();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      fetchUserSession();
-    });
-    return () => subscription.unsubscribe();
+    
+    // Elakkan ralat jika klien tidak sah
+    let subscription: any = null;
+    try {
+      const { data } = supabase.auth.onAuthStateChange(() => {
+        fetchUserSession();
+      });
+      subscription = data.subscription;
+    } catch (e) {}
+
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
   }, []);
 
   if (loading) {
@@ -55,7 +80,7 @@ const App: React.FC = () => {
           <img src={logoUrl} alt="Logo" className="w-16 h-16 mx-auto mb-6 logo-glow-animate" />
           <h2 className="text-2xl font-black text-white tracking-tighter uppercase mb-4">Akaun Tertunda</h2>
           <p className="text-slate-400 text-sm leading-relaxed mb-8">
-            ID hampa (<span className="text-cyan-400 font-bold">{profile.email.split('@')[0]}</span>) telah didaftarkan. Sila tunggu Admin meluluskan akaun hampa sebelum boleh masuk ke Studio.
+            ID hampa (<span className="text-cyan-400 font-bold">{profile.email?.split('@')[0] || profile.username}</span>) telah didaftarkan. Sila tunggu Admin meluluskan akaun hampa sebelum boleh masuk ke Studio.
           </p>
           <button 
             onClick={() => supabase.auth.signOut()}

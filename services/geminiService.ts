@@ -12,9 +12,10 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 // Helper to get Gemini API key safely
 const getGeminiApiKey = () => {
   try {
-    return (import.meta as any).env?.VITE_API_KEY || process.env.API_KEY || '';
+    const env = (import.meta as any).env || {};
+    return env.VITE_API_KEY || (typeof process !== 'undefined' ? process.env.API_KEY : '') || '';
   } catch (e) {
-    return process.env.API_KEY || '';
+    return (typeof process !== 'undefined' ? process.env.API_KEY : '') || '';
   }
 };
 
@@ -101,7 +102,7 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
     if (blob.size > 100) return URL.createObjectURL(blob);
     throw new Error("Blob size too small");
   } catch (e) {
-    console.warn("Direct and standard proxy media fetch failed, trying specialized proxies...");
+    console.warn("Media fetch failed, trying alternative proxies...");
     const altProxies = [
       `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}`,
       `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`,
@@ -125,6 +126,7 @@ export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
   try {
     return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
   } catch (e) {
+    console.error("Gagal mengambil history:", e);
     return { result: [] };
   }
 };
@@ -152,7 +154,7 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora?api_key=${GEMINIGEN_KEY}`;
+  const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora`;
 
   try {
     const response = await robustFetch(targetUrl, {
@@ -174,6 +176,7 @@ export const generateSoraVideo = async (params: {
 
 export const generateText = async (prompt: string) => {
   const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -184,6 +187,7 @@ export const generateText = async (prompt: string) => {
 
 export const generateTTS = async (text: string) => {
   const apiKey = getGeminiApiKey();
+  if (!apiKey) return null;
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
@@ -240,6 +244,7 @@ export const decodeAudioData = async (
 
 export const generateImage = async (prompt: string, aspectRatio: string) => {
   const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
@@ -263,6 +268,7 @@ export const generateImage = async (prompt: string, aspectRatio: string) => {
 
 export const startVideoGeneration = async (prompt: string) => {
   const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
   const ai = new GoogleGenAI({ apiKey });
   return await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
@@ -277,6 +283,7 @@ export const startVideoGeneration = async (prompt: string) => {
 
 export const checkVideoStatus = async (operation: any) => {
   const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
   const ai = new GoogleGenAI({ apiKey });
   return await ai.operations.getVideosOperation({ operation });
 };
