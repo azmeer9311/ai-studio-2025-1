@@ -20,7 +20,7 @@ export const supabase = createClient(finalUrl, finalKey);
  * SQL SETUP SCRIPT (SILA COPY & RUN DALAM SUPABASE SQL EDITOR)
  * ========================================================================
  * 
- * -- 1. RESET SCHEMA (PENTING JIKA ADA RALAT COLUMN MISSING)
+ * -- 1. RESET SCHEMA (PENTING JIKA ADA RALAT 500 ATAU COLUMN MISSING)
  * DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
  * DROP FUNCTION IF EXISTS public.handle_new_user();
  * DROP TABLE IF EXISTS public.profiles CASCADE;
@@ -28,7 +28,7 @@ export const supabase = createClient(finalUrl, finalKey);
  * -- 2. AKTIFKAN EXTENSIONS
  * CREATE EXTENSION IF NOT EXISTS pgcrypto;
  * 
- * -- 3. BINA TABLE PROFILES
+ * -- 3. BINA TABLE PROFILES (LENGKAP)
  * CREATE TABLE public.profiles (
  *   id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
  *   username TEXT UNIQUE,
@@ -49,9 +49,12 @@ export const supabase = createClient(finalUrl, finalKey);
  * CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
  * CREATE POLICY "Admin can do everything" ON public.profiles FOR ALL USING ((SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true);
  * 
- * -- 5. TRIGGER FUNCTION
+ * -- 5. TRIGGER FUNCTION (FIX 500 ERROR)
  * CREATE OR REPLACE FUNCTION public.handle_new_user()
- * RETURNS TRIGGER AS $$
+ * RETURNS TRIGGER 
+ * LANGUAGE plpgsql
+ * SECURITY DEFINER SET search_path = public
+ * AS $$
  * BEGIN
  *   INSERT INTO public.profiles (id, username, email, is_approved, is_admin, video_limit, image_limit)
  *   VALUES (
@@ -65,7 +68,7 @@ export const supabase = createClient(finalUrl, finalKey);
  *   );
  *   RETURN NEW;
  * END;
- * $$ LANGUAGE plpgsql SECURITY DEFINER;
+ * $$;
  * 
  * CREATE TRIGGER on_auth_user_created
  *   AFTER INSERT ON auth.users
