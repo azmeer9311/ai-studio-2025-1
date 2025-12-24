@@ -47,12 +47,16 @@ const App: React.FC = () => {
     }
   };
 
+  const bakiCount = profile.is_admin ? 'UNLIMITED' : (profile.video_limit - profile.videos_used);
+  const percentage = profile.is_admin ? 100 : Math.min(100, (Math.max(0, bakiCount as number) / (profile.video_limit || 1)) * 100);
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-[#020617] text-slate-200 overflow-hidden font-sans">
       <Sidebar activeView={activeView} onViewChange={setActiveView} userProfile={profile} />
 
       <main className="flex-1 relative flex flex-col min-w-0 overflow-hidden">
-        <header className="md:hidden flex flex-col bg-[#020617] border-b border-slate-800/50 z-20">
+        {/* Mobile & Tablet Header (< 768px) */}
+        <header className="md:hidden flex flex-col bg-[#020617] border-b border-slate-800/50 z-20 shadow-2xl">
           <div className="flex items-center justify-between p-4 px-5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 relative flex items-center justify-center">
@@ -62,10 +66,21 @@ const App: React.FC = () => {
               <div>
                 <h1 className="text-sm font-black tracking-tighter text-white uppercase leading-none">azmeer</h1>
                 <p className="text-[8px] font-bold text-cyan-500 tracking-[0.2em] uppercase opacity-80 leading-none">ai studio</p>
-                <div className="mt-1.5 inline-flex items-center bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-md">
-                  <span className="text-[9px] font-black text-cyan-400 uppercase tracking-widest">
-                    BAKI: {profile.is_admin ? 'UNLIMITED' : (profile.video_limit - profile.videos_used)} VIDEO
-                  </span>
+                <div className="mt-1 flex flex-col gap-1">
+                  <div className="inline-flex items-center bg-cyan-500/20 border border-cyan-500/30 px-2 py-0.5 rounded-md shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+                    <span className="text-[9px] font-black text-cyan-400 uppercase tracking-widest whitespace-nowrap">
+                      BAKI: {bakiCount} VIDEO
+                    </span>
+                  </div>
+                  {/* Progress bar for mobile visibility */}
+                  {!profile.is_admin && (
+                    <div className="w-20 h-1 bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-cyan-500 shadow-[0_0_5px_rgba(34,211,238,0.5)] transition-all duration-1000" 
+                        style={{ width: `${percentage}%` }}
+                      ></div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -74,7 +89,7 @@ const App: React.FC = () => {
                 localStorage.removeItem('azmeer_studio_session');
                 window.location.reload();
               }} 
-              className="text-[9px] font-black text-rose-500 uppercase tracking-widest border border-rose-500/20 px-4 py-2 rounded-xl bg-rose-500/5"
+              className="text-[9px] font-black text-rose-500 uppercase tracking-widest border border-rose-500/20 px-4 py-2 rounded-xl bg-rose-500/5 active:scale-95"
             >
               Exit
             </button>
