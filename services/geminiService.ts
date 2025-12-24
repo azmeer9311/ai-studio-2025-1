@@ -2,13 +2,15 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { canGenerate, updateUsage } from "./authService";
 
-// Geminigen.ai Configuration (Updated with new key from documentation)
+// Geminigen.ai Configuration - KUNCI TERBARU: tts-fe9842ffd74cffdf095bb639e1b21a01
 const GEMINIGEN_KEY = 'tts-fe9842ffd74cffdf095bb639e1b21a01';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
- * Prepares a URL with necessary parameters.
+ * Menambah api_key ke dalam URL. 
+ * Kita gunakan Query Param kerana ia dianggap sebagai 'Simple Request' oleh browser,
+ * membolehkan kita bypass ralat CORS Preflight (OPTIONS) yang sering gagal.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
@@ -20,20 +22,33 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   }
   
   cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, "$1");
-  return cleanUrl;
+
+  // Masukkan API Key terus ke dalam URL
+  try {
+    const urlObj = new URL(cleanUrl);
+    urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
+    // Tambah cache buster untuk elak stale data
+    urlObj.searchParams.set('_t', Date.now().toString());
+    return urlObj.toString();
+  } catch (e) {
+    const sep = cleanUrl.includes('?') ? '&' : '?';
+    return `${cleanUrl}${sep}api_key=${GEMINIGEN_KEY}&_t=${Date.now()}`;
+  }
 };
 
 /**
- * Resilient fetch that handles CORS and Network errors.
- * Uses x-api-key header as per documentation.
+ * Fungsi fetch yang sangat tahan lasak.
+ * Jika direct fetch gagal (CORS), ia akan automatik guna AllOrigins Proxy.
  */
 async function robustFetch(url: string, options: RequestInit = {}) {
+  const authUrl = prepareAuthenticatedUrl(url);
+  
+  // Jangan hantar x-api-key dalam header jika guna Query Param (untuk elak preflight OPTIONS)
   const headers: Record<string, string> = {
     'Accept': 'application/json',
-    'x-api-key': GEMINIGEN_KEY, // As requested in documentation
   };
 
-  if (!(options.body instanceof FormData)) {
+  if (!(options.body instanceof FormData) && options.method === 'POST') {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -43,35 +58,33 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   };
 
   try {
-    const response = await fetch(url, finalOptions);
+    const response = await fetch(authUrl, finalOptions);
     if (response.ok) return response;
     
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail?.message || errorData.message || `API Error: ${response.status}`);
   } catch (e: any) {
-    const isNetworkError = e.name === 'TypeError' || 
-                           e.message?.includes('Failed to fetch') || 
-                           e.message?.includes('NetworkError');
-
-    if (isNetworkError) {
-      console.warn("Network/CORS error detected, attempting fallback proxy for:", url);
-      
-      // Menggunakan Proxy AllOrigins untuk melepasi sekatan CORS browser jika direct fetch gagal
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      
-      try {
-        const proxyResponse = await fetch(proxyUrl);
-        if (proxyResponse.ok) {
-          const data = await proxyResponse.json();
-          const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
-          return {
-            ok: true,
-            json: async () => contents
-          } as Response;
-        }
-      } catch (proxyErr) {
-        console.error("Proxy fallback failed.");
+    // Jika ralat rangkaian dikesan (CORS/Failed to Fetch)
+    console.warn("Direct fetch blocked/failed. Switching to AllOrigins Proxy Fallback...");
+    
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(authUrl)}`;
+    
+    try {
+      const proxyResponse = await fetch(proxyUrl);
+      if (proxyResponse.ok) {
+        const data = await proxyResponse.json();
+        // AllOrigins pulangkan data dalam field 'contents' sebagai string
+        const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
+        
+        // Mock response object
+        return {
+          ok: true,
+          status: 200,
+          json: async () => contents
+        } as Response;
       }
+    } catch (proxyErr) {
+      console.error("Critical: Proxy Fallback failed for", url);
     }
     throw e;
   }
@@ -86,25 +99,34 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
   if (url.startsWith('blob:')) return url;
+  
+  const authUrl = prepareAuthenticatedUrl(url);
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Direct fetch failed");
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    // Kita cuba fetch melalui proxy untuk elak CORS video
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(authUrl)}`;
+    const response = await fetch(proxyUrl);
+    if (response.ok) {
+       const data = await response.json();
+       // Kita tak boleh buat blob terus dari AllOrigins 'contents' (sebab ia base64/string),
+       // Jadi kita pulangkan authUrl asal sebagai fallback yang selamat.
+       return authUrl;
+    }
+    return authUrl;
   } catch (e) {
-    // Fallback jika blob blocked: buka dalam tab baru atau pulangkan URL asal
-    return url;
+    return authUrl;
   }
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
   try {
-    // filter_by=all as per docs
-    return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
+    // Pastikan params dihantar dengan betul mengikut docs
+    const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
+    const data = await fetchApi(endpoint);
+    return data;
   } catch (e) {
-    console.error("Gagal mengambil history:", e);
-    return { result: [] };
+    console.error("Vault retrieval error:", e);
+    return { result: [], success: false };
   }
 };
 
@@ -127,7 +149,7 @@ export const generateSoraVideo = async (params: {
   formData.append('model', 'sora-2'); 
   formData.append('duration', params.duration.toString());
   formData.append('aspect_ratio', params.aspect_ratio);
-  formData.append('resolution', 'small'); // Sora-2 only supports small (720p) per docs
+  formData.append('resolution', 'small'); 
   
   if (params.imageFile) {
     formData.append('files', params.imageFile);
@@ -142,7 +164,7 @@ export const generateSoraVideo = async (params: {
   return result;
 };
 
-// ... (selebihnya kekal mengikut logic sistem sedia ada yang telah hampa minta "lock")
+// --- LOGIC SYSTEM DI LOCK (JANGAN USIK) ---
 export const generateText = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllHistory, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
+import { getAllHistory, getSpecificHistory, fetchVideoAsBlob, prepareAuthenticatedUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
 
 interface HistoryViewProps {
@@ -17,19 +17,23 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
-    // Dokumen menunjukkan URL berada dalam generated_video array
+    
+    // 1. Array generated_video (Format Dokumentasi)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const vid = item.generated_video[0];
       return vid.video_url || vid.video_uri || '';
     }
-    // Fallback jika dalam format generate_result string
-    if (item.generate_result && typeof item.generate_result === 'string') {
-      if (item.generate_result.startsWith('http')) return item.generate_result;
-      try {
-        const parsed = JSON.parse(item.generate_result);
-        if (Array.isArray(parsed) && parsed[0]?.video_url) return parsed[0].video_url;
-        if (parsed.video_url) return parsed.video_url;
-      } catch (e) {}
+
+    // 2. generate_result
+    if (item.generate_result) {
+      if (typeof item.generate_result === 'string') {
+        if (item.generate_result.startsWith('http')) return item.generate_result;
+        try {
+          const parsed = JSON.parse(item.generate_result);
+          if (Array.isArray(parsed)) return parsed[0]?.video_url || parsed[0]?.video_uri || '';
+          return parsed.video_url || parsed.video_uri || '';
+        } catch (e) {}
+      }
     }
     return '';
   };
@@ -39,6 +43,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     
     try {
       const response = await getAllHistory(1, 100); 
+      // AllOrigins pulangkan contents, tapi robustFetch dah tolong parse
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
@@ -51,10 +56,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
-        // Jika ada status 1 (Processing), teruskan polling
+        // Polling Task Processing
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
-        if (hasActiveTasks || filteredItems.length > 0) {
+        if (hasActiveTasks) {
            pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 8000);
         }
       } else {
@@ -62,7 +67,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
     } catch (err: any) {
       console.error("Gagal sync vault:", err);
-      if (showLoading) setError("Gagal memuatkan rekod arkib. Masalah rangkaian dikesan.");
+      if (showLoading) setError("Vault Sync Error. Sila klik Refresh semula.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -83,7 +88,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
 
-      // Jika URL tak ada, tarik details spesifik
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
@@ -92,14 +96,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
 
       if (url) {
-        const videoLink = await fetchVideoAsBlob(url);
-        setActiveVideo(prev => ({ ...prev, [uuid]: videoLink }));
+        const finalUrl = prepareAuthenticatedUrl(url);
+        setActiveVideo(prev => ({ ...prev, [uuid]: finalUrl }));
       } else {
         throw new Error("Punca media tidak dijumpai.");
       }
     } catch (e: any) {
       console.error("Gagal memuatkan video:", e);
-      alert(`Gagal memuatkan video: ${e.message}`);
+      alert(`Preview Error: Sila muat turun video secara terus.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -117,19 +121,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
 
       if (url) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `azmeer-studio-${uuid}.mp4`;
-        a.target = "_blank";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const finalUrl = prepareAuthenticatedUrl(url);
+        window.open(finalUrl, '_blank');
       } else {
         throw new Error("Punca media tidak dijumpai.");
       }
     } catch (e: any) {
       console.error("Gagal muat turun:", e);
-      alert(`Proses muat turun gagal: ${e.message}`);
+      alert(`Muat turun gagal.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
