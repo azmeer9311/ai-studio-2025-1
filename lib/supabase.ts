@@ -12,24 +12,31 @@ const STORAGE_KEY_HISTORY = 'azmeer_ai_history';
 const initLocalStorage = () => {
   const existingProfiles = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILES) || '[]');
   
-  // Pastikan admin utama sentiasa wujud
-  const adminExists = existingProfiles.some((p: any) => p.email.toLowerCase() === 'azmeer93@azmeer.ai');
+  // Cari jika admin sedia ada
+  const adminIndex = existingProfiles.findIndex((p: any) => p.email.toLowerCase() === 'azmeer93@azmeer.ai');
   
-  if (!adminExists) {
-    const adminProfile = {
-      id: 'admin-uuid-123',
-      email: 'azmeer93@azmeer.ai',
-      is_approved: true,
-      is_admin: true,
-      video_limit: 9999,
-      image_limit: 9999,
-      videos_used: 0,
-      images_used: 0,
-      created_at: new Date().toISOString()
-    };
+  const adminProfile = {
+    id: 'admin-uuid-123',
+    email: 'azmeer93@azmeer.ai',
+    password: 'Azm93112@', // Password tetap seperti diminta
+    is_approved: true,
+    is_admin: true,
+    video_limit: 9999,
+    image_limit: 9999,
+    videos_used: 0,
+    images_used: 0,
+    created_at: new Date().toISOString()
+  };
+
+  if (adminIndex === -1) {
+    // Jika takda, tambah baru
     existingProfiles.push(adminProfile);
-    localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(existingProfiles));
+  } else {
+    // Jika ada, kemaskini password & status admin (untuk lock setting)
+    existingProfiles[adminIndex] = { ...existingProfiles[adminIndex], ...adminProfile };
   }
+  
+  localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(existingProfiles));
   
   if (!localStorage.getItem(STORAGE_KEY_HISTORY)) {
     localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify([]));
@@ -46,14 +53,19 @@ export const supabase = {
     },
     signInWithPassword: async ({ email, password }: any) => {
       const profiles = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILES) || '[]');
-      // Cari dengan perbandingan huruf kecil untuk mengelakkan ralat taip
+      // Cari dengan perbandingan huruf kecil
       const user = profiles.find((p: any) => p.email.toLowerCase() === email.toLowerCase());
       
       if (user) {
-        const session = { user: { id: user.id, email: user.email } };
-        localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
-        window.dispatchEvent(new Event('auth-change'));
-        return { data: { session }, error: null };
+        // Semakan password
+        if (user.password === password) {
+          const session = { user: { id: user.id, email: user.email } };
+          localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
+          window.dispatchEvent(new Event('auth-change'));
+          return { data: { session }, error: null };
+        } else {
+          return { data: null, error: { message: "Kata Laluan salah. Sila cuba lagi." } };
+        }
       }
       return { data: null, error: { message: "ID tidak dijumpai dalam sistem." } };
     },
@@ -65,6 +77,7 @@ export const supabase = {
       const newProfile = {
         id: Math.random().toString(36).substring(2, 15),
         email,
+        password, // Simpan password untuk login nanti
         is_approved: false,
         is_admin: false,
         video_limit: options?.data?.video_limit || 5,
