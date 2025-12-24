@@ -257,11 +257,16 @@ export const generateImage = async (prompt: string, aspectRatio: string) => {
     }
   });
   
-  for (const part of response.candidates[0].content.parts) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+  // FIX: Menggunakan optional chaining dan check undefined untuk mengelakkan ralat TS di Vercel
+  const candidates = response.candidates;
+  if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
+    for (const part of candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
   }
+  
   throw new Error("Tiada imej yang dijana.");
 };
 
