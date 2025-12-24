@@ -1,24 +1,35 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 
-// Deklarasi process untuk keserasian browser (Vite define)
+// Deklarasi global untuk mengelakkan ralat TS dengan process.env (Vite define)
 declare const process: any;
 
 /**
- * Mengambil environment variables dengan fallback.
- * Kita gunakan placeholder URL untuk mengelakkan ralat 'Uncaught Error: supabaseUrl is required' 
- * yang menyebabkan skrin putih (app crash).
+ * Fungsi pembantu untuk mendapatkan nilai dari environment variables secara selamat.
+ * Ia mencuba import.meta.env dahulu (standard Vite), kemudian fallback ke process.env
+ * (yang akan digantikan secara literal oleh define dalam vite.config.ts).
  */
-const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const getEnv = (key: string): string => {
+  try {
+    const value = (import.meta as any).env?.[key] || process.env[key];
+    return value || '';
+  } catch (e) {
+    return '';
+  }
+};
 
-// Jika URL kosong, kita bagi placeholder supaya Supabase client tidak crash masa initialization.
-const supabaseUrl = rawUrl || 'https://your-project.supabase.co';
-const supabaseAnonKey = rawKey || 'your-anon-key';
+const url = getEnv('VITE_SUPABASE_URL');
+const key = getEnv('VITE_SUPABASE_ANON_KEY');
 
-if (!rawUrl || !rawKey) {
-  console.error("AMARAN: Supabase URL atau Anon Key tidak dijumpai dalam environment variables.");
-  console.info("Sila pastikan VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY telah ditetapkan.");
+/**
+ * PENTING: createClient akan melontar ralat "supabaseUrl is required" jika argumen pertama kosong.
+ * Kita gunakan URL placeholder yang kelihatan sah jika kunci sebenar tiada untuk mengelakkan 
+ * aplikasi daripada crash (skrin putih) semasa booting.
+ */
+const supabaseUrl = url && url.length > 0 ? url : 'https://fix-your-env-vars.supabase.co';
+const supabaseAnonKey = key && key.length > 0 ? key : 'placeholder-key';
+
+if (!url || !key) {
+  console.warn("Supabase configuration missing. Please check your environment variables (VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY).");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
