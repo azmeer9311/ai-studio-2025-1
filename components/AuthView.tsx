@@ -9,6 +9,7 @@ interface AuthViewProps {
 const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [userId, setUserId] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,15 +19,13 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     setLoading(true);
     setError(null);
 
-    // Menukar ID kepada format emel dalaman untuk Supabase Auth
-    const email = userId.includes('@') ? userId : `${userId}@azmeer.ai`;
-
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ username: userId, password });
         if (error) throw error;
       } else {
         const { error } = await supabase.auth.signUp({ 
+          username: userId,
           email, 
           password,
           options: {
@@ -38,6 +37,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         });
         if (error) throw error;
         alert("Pendaftaran berjaya! Tunggu admin approve akaun hampa.");
+        setIsLogin(true);
       }
       onAuthSuccess();
     } catch (err: any) {
@@ -76,10 +76,24 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
               value={userId} 
               onChange={(e) => setUserId(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
-              placeholder="Contoh: azmeerfarhan93"
+              placeholder="Contoh: azmeer93"
               required
             />
           </div>
+
+          {!isLogin && (
+            <div className="space-y-2">
+              <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Email Address</label>
+              <input 
+                type="email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
+                placeholder="Contoh: azmeer@gmail.com"
+                required
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Password</label>
@@ -104,7 +118,10 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
 
         <div className="mt-8 text-center">
           <button 
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError(null);
+            }}
             className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-cyan-400 transition-colors"
           >
             {isLogin ? "Takda akaun? Daftar sini" : "Dah ada akaun? Log masuk"}

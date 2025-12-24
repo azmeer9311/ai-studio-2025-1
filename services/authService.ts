@@ -40,3 +40,7 @@ export const getAllProfiles = async (): Promise<UserProfile[]> => {
 export const updateProfileAdmin = async (userId: string, updates: Partial<UserProfile>) => {
   await supabase.from('profiles').update(updates).eq('id', userId);
 };
+
+export const deleteProfileAdmin = async (userId: string) => {
+  await supabase.from('profiles').delete().eq('id', userId);
+};

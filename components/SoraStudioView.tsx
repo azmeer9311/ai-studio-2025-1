@@ -2,13 +2,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 import { generateUGCPrompt } from '../services/openaiService';
-import { AppView } from '../types';
+import { AppView, UserProfile } from '../types';
 
 interface SoraStudioViewProps {
   onViewChange?: (view: AppView) => void;
+  userProfile: UserProfile;
 }
 
-const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange }) => {
+const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfile }) => {
   const [prompt, setPrompt] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -95,7 +96,8 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange }) => {
         prompt,
         duration,
         aspect_ratio: aspectRatio,
-        imageFile: selectedFile || undefined
+        imageFile: selectedFile || undefined,
+        userId: userProfile.id
       });
       const uuid = response?.data?.uuid || response?.uuid || response?.result?.uuid;
       if (uuid) pollStatus(uuid);

@@ -8,7 +8,9 @@ export enum AppView {
 
 export interface UserProfile {
   id: string;
+  username: string;
   email: string;
+  password?: string; // Hanya untuk paparan admin (Security Risk diabaikan atas permintaan user)
   is_approved: boolean;
   is_admin: boolean;
   video_limit: number;

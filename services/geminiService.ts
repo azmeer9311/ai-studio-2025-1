@@ -138,10 +138,10 @@ export const generateSoraVideo = async (params: {
   duration: 10 | 15;
   aspect_ratio: 'landscape' | 'portrait';
   imageFile?: File;
+  userId: string;
 }) => {
-  // Master access - bypass user check
-  const allowed = await canGenerate('master-admin', 'video');
-  if (!allowed) throw new Error("Had penjanaan video habis.");
+  const allowed = await canGenerate(params.userId, 'video');
+  if (!allowed) throw new Error("Had penjanaan video hampa dah habis. Sila hubungi Admin untuk tambah limit.");
 
   const formData = new FormData();
   formData.append('prompt', params.prompt);
@@ -161,7 +161,7 @@ export const generateSoraVideo = async (params: {
     });
 
     const result = await response.json();
-    await updateUsage('master-admin', 'video');
+    await updateUsage(params.userId, 'video');
     return result;
   } catch (e: any) {
     console.error("Sora Generation Error:", e);
