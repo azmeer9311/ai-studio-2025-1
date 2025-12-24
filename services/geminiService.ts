@@ -41,14 +41,16 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 
 /**
  * A more resilient fetch implementation that handles common network/CORS issues.
+ * FIXED: Removed custom 'x-api-key' header to avoid CORS preflight (OPTIONS) blocks.
  */
 async function robustFetch(url: string, options: RequestInit = {}) {
+  // PENTING: Jangan tambah custom headers yang bukan standard (seperti x-api-key) 
+  // untuk mengelakkan ralat 'CORS Preflight' pada pelayar.
   const headers: Record<string, string> = {
     'Accept': 'application/json',
-    'x-api-key': GEMINIGEN_KEY,
   };
 
-  // Only set Content-Type if it's not FormData (browser sets boundary automatically)
+  // Hanya set Content-Type jika bukan FormData (browser akan set boundary secara automatik)
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
@@ -66,14 +68,24 @@ async function robustFetch(url: string, options: RequestInit = {}) {
                          e.message?.includes('Failed to fetch') || 
                          e.message?.includes('NetworkError');
 
+    // Jika ralat CORS atau Network dikesan, cuba guna Proxy
     if (isFetchError) {
-      console.warn("Network error detected, attempting fallback for:", url);
-      // Fallback only for GET requests or specific known safe endpoints
+      console.warn("Network/CORS error detected, attempting fallback proxy for:", url);
+      
+      // Gunakan proxy untuk melepasi sekatan CORS browser
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      
       if (!options.method || options.method === 'GET') {
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
         try {
-          const proxyResponse = await fetch(proxyUrl, { ...options, headers: finalHeaders });
-          if (proxyResponse.ok) return proxyResponse;
+          const proxyResponse = await fetch(proxyUrl);
+          if (proxyResponse.ok) {
+            const data = await proxyResponse.json();
+            // allorigins memulangkan data dalam field 'contents' sebagai string
+            return {
+              ok: true,
+              json: async () => JSON.parse(data.contents)
+            } as Response;
+          }
         } catch (proxyErr) {
           console.error("Proxy fallback failed.");
         }
@@ -86,7 +98,9 @@ async function robustFetch(url: string, options: RequestInit = {}) {
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const targetUrl = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
   const authUrl = prepareAuthenticatedUrl(targetUrl);
-  return (await robustFetch(authUrl, options)).json();
+  const response = await robustFetch(authUrl, options);
+  // robustFetch mungkin pulangkan object dummy untuk proxy
+  return typeof response.json === 'function' ? await response.json() : response;
 }
 
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
@@ -96,12 +110,13 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   const finalUrl = prepareAuthenticatedUrl(url);
   
   try {
-    const response = await robustFetch(finalUrl);
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error("Fetch failed");
     const blob = await response.blob();
     if (blob.size > 100) return URL.createObjectURL(blob);
     throw new Error("Invalid blob size");
   } catch (e) {
-    // Final desperation fallback for video blobs
+    // Jika gagal fetch blob (CORS), pulangkan URL asal yang ada api_key
     return finalUrl;
   }
 };
@@ -138,18 +153,24 @@ export const generateSoraVideo = async (params: {
     formData.append('files', params.imageFile);
   }
 
-  const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora`;
-  const response = await robustFetch(targetUrl, {
+  const targetUrl = prepareAuthenticatedUrl(`${GEMINIGEN_BASE_URL}/video-gen/sora`);
+  const response = await fetch(targetUrl, {
     method: 'POST',
     body: formData
+    // NOTA: Jangan letak headers custom di sini untuk elak preflight CORS
   });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || "Gagal menghubungi server Geminigen.");
+  }
 
   const result = await response.json();
   await updateUsage(params.userId, 'video');
   return result;
 };
 
-// Use process.env.API_KEY directly as per SDK requirements
+// ... (selebihnya dikekalkan sama seperti asal)
 export const generateText = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
@@ -176,7 +197,6 @@ export const generateTTS = async (text: string) => {
   return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 };
 
-// Manual implementation of Base64 encoding as per guidelines
 export const encodeBase64 = (bytes: Uint8Array) => {
   let binary = '';
   const len = bytes.byteLength;
@@ -186,7 +206,6 @@ export const encodeBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-// Manual implementation of Base64 decoding as per guidelines
 export const decodeBase64 = (base64: string) => {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -257,7 +276,7 @@ export const checkVideoStatus = async (operation: any) => {
 
 export const fetchVideoContent = async (uri: string) => {
   const finalUri = `${uri}&key=${process.env.API_KEY}`;
-  const response = await robustFetch(finalUri);
+  const response = await fetch(finalUri);
   const blob = await response.blob();
   return URL.createObjectURL(blob);
 };
