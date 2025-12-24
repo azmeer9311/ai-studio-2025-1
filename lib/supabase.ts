@@ -3,18 +3,38 @@ import { createClient } from '@supabase/supabase-js';
 
 /**
  * Real Supabase Client Configuration
- * Sinkronisasi penuh dengan Vercel Environment Variables.
+ * Optimized for Vercel and Vite environment synchronization.
  */
 
-// Mengutamakan VITE_ prefix yang disuntik oleh Vercel semasa build
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+// Define helper to get env variables safely across different environments
+const getEnv = (key: string): string => {
+  try {
+    // 1. Check Vite standard (import.meta.env)
+    const viteEnv = (import.meta as any).env?.[key];
+    if (viteEnv) return viteEnv;
 
-// Jika URL kosong, kita guna placeholder untuk elakkan app crash, 
-// tapi ralat 'Failed to fetch' akan muncul jika keys tak set kat Vercel.
-const finalUrl = supabaseUrl && supabaseUrl.startsWith('http') ? supabaseUrl : 'https://placeholder.supabase.co';
+    // 2. Check process.env (defined in vite.config.ts)
+    if (typeof process !== 'undefined' && process.env && (process.env as any)[key]) {
+      return (process.env as any)[key];
+    }
+    
+    return '';
+  } catch (e) {
+    return '';
+  }
+};
+
+const supabaseUrl = getEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
+
+// Fallback logic to prevent "Failed to fetch" when keys are missing or invalid
+const finalUrl = supabaseUrl && supabaseUrl.startsWith('http') 
+  ? supabaseUrl 
+  : 'https://placeholder.supabase.co';
+
 const finalKey = supabaseAnonKey || 'placeholder-key';
 
+// Initialize the client
 export const supabase = createClient(finalUrl, finalKey);
 
 /**
