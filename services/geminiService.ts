@@ -1,6 +1,5 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { supabase } from "../lib/supabase";
 import { canGenerate, updateUsage } from "./authService";
 
 // Mengatasi ralat TS2580 dengan pengisytiharan global yang lebih luas
@@ -123,7 +122,6 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
-  // Mock history logic: Jika pangkalan data tiada, kita return data kosong supaya App tak crash
   try {
     return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
   } catch (e) {
@@ -141,11 +139,9 @@ export const generateSoraVideo = async (params: {
   aspect_ratio: 'landscape' | 'portrait';
   imageFile?: File;
 }) => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Sila log masuk.");
-  
-  const allowed = await canGenerate(user.id, 'video');
-  if (!allowed) throw new Error("Had penjanaan video hampa dah habis. Contact admin untuk tambah limit.");
+  // Master access - bypass user check
+  const allowed = await canGenerate('master-admin', 'video');
+  if (!allowed) throw new Error("Had penjanaan video habis.");
 
   const formData = new FormData();
   formData.append('prompt', params.prompt);
@@ -165,12 +161,12 @@ export const generateSoraVideo = async (params: {
     });
 
     const result = await response.json();
-    await updateUsage(user.id, 'video');
+    await updateUsage('master-admin', 'video');
     return result;
   } catch (e: any) {
     console.error("Sora Generation Error:", e);
     if (e.name === 'TypeError' || e.message?.includes('Failed to fetch')) {
-      throw new Error("Gagal menyambung ke API Sora. Masalah rangkaian atau CORS dikesan. Sila cuba lagi sebentar.");
+      throw new Error("Gagal menyambung ke API Sora. Masalah rangkaian atau CORS dikesan.");
     }
     throw e;
   }

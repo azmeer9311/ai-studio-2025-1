@@ -1,57 +1,35 @@
 
-import { supabase } from '../lib/supabase';
 import { UserProfile } from '../types';
 
-export const getProfile = async (userId: string): Promise<UserProfile | null> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
-  
-  if (error) return null;
-  return data;
+// Selalu pulangkan profil admin tetap
+export const getProfile = async (_userId: string): Promise<UserProfile | null> => {
+  return {
+    id: 'master-admin',
+    email: 'azmeer93@azmeer.ai',
+    is_approved: true,
+    is_admin: true,
+    video_limit: 9999,
+    image_limit: 9999,
+    videos_used: 0,
+    images_used: 0,
+    created_at: new Date().toISOString()
+  };
 };
 
-export const updateUsage = async (userId: string, type: 'video' | 'image') => {
-  const field = type === 'video' ? 'videos_used' : 'images_used';
-  const { data: profile } = await supabase.from('profiles').select(field).eq('id', userId).single();
-  
-  if (profile) {
-    await supabase.from('profiles').update({ [field]: profile[field] + 1 }).eq('id', userId);
-  }
+export const updateUsage = async (_userId: string, _type: 'video' | 'image') => {
+  // Tidak perlu update dalam guest mode
+  return;
 };
 
-export const canGenerate = async (userId: string, type: 'video' | 'image'): Promise<boolean> => {
-  const profile = await getProfile(userId);
-  if (!profile || !profile.is_approved) return false;
-  
-  if (type === 'video') return profile.videos_used < profile.video_limit;
-  if (type === 'image') return profile.images_used < profile.image_limit;
-  return false;
+export const canGenerate = async (_userId: string, _type: 'video' | 'image'): Promise<boolean> => {
+  // Sentiasa benarkan penjanaan
+  return true;
 };
 
 export const getAllProfiles = async (): Promise<UserProfile[]> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error("Error fetching profiles:", error);
-    return [];
-  }
-  return data || [];
+  return [];
 };
 
-export const updateProfileAdmin = async (userId: string, updates: Partial<UserProfile>) => {
-  const { error } = await supabase
-    .from('profiles')
-    .update(updates)
-    .eq('id', userId);
-  
-  if (error) {
-    console.error("Error updating profile:", error);
-    throw error;
-  }
+export const updateProfileAdmin = async (_userId: string, _updates: Partial<UserProfile>) => {
+  return;
 };
