@@ -62,6 +62,12 @@ const App: React.FC = () => {
               <div>
                 <h1 className="text-sm font-black tracking-tighter text-white uppercase leading-none">azmeer</h1>
                 <p className="text-[8px] font-bold text-cyan-500 tracking-[0.2em] uppercase opacity-80 leading-none">ai studio</p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <div className="w-1 h-1 rounded-full bg-cyan-500 shadow-[0_0_5px_rgba(34,211,238,0.8)]"></div>
+                  <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
+                    V: {profile.videos_used}/{profile.is_admin ? '∞' : profile.video_limit}
+                  </span>
+                </div>
               </div>
             </div>
             <button 
