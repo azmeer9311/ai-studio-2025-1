@@ -8,7 +8,7 @@ interface AuthViewProps {
 
 const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
+  const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +18,15 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     setLoading(true);
     setError(null);
 
+    // Menukar ID kepada format emel dalaman untuk Supabase Auth
+    const email = userId.includes('@') ? userId : `${userId}@azmeer.ai`;
+
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error, data } = await supabase.auth.signUp({ 
+        const { error } = await supabase.auth.signUp({ 
           email, 
           password,
           options: {
@@ -38,7 +41,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
       }
       onAuthSuccess();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message === "Invalid login credentials" ? "ID atau Kata Laluan salah." : err.message);
     } finally {
       setLoading(false);
     }
@@ -55,7 +58,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
             {isLogin ? 'Log Masuk' : 'Daftar Baru'}
           </h2>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-4">
-            Azmeer AI Studio • Authentication
+            Azmeer AI Studio • Secure Access
           </p>
         </div>
 
@@ -67,13 +70,13 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
           )}
 
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Email Address</label>
+            <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">User ID</label>
             <input 
-              type="email" 
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)}
+              type="text" 
+              value={userId} 
+              onChange={(e) => setUserId(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
-              placeholder="nama@email.com"
+              placeholder="Contoh: azmeerfarhan93"
               required
             />
           </div>

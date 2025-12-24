@@ -42,6 +42,12 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Fungsi untuk memaparkan ID sahaja
+  const formatDisplayId = (email: string) => {
+    if (!email) return 'N/A';
+    return email.split('@')[0];
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#020617] p-4 md:p-12 overflow-y-auto custom-scrollbar">
       <div className="max-w-7xl mx-auto w-full">
@@ -51,7 +57,7 @@ const AdminDashboard: React.FC = () => {
               Admin <span className="text-cyan-500">Control</span>
             </h2>
             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-              Urus User Approval, ID, Email & Had Penjanaan
+              Urus User Approval, ID & Had Penjanaan
             </p>
           </div>
           <button 
@@ -71,7 +77,7 @@ const AdminDashboard: React.FC = () => {
             <table className="w-full text-left min-w-[900px]">
               <thead className="bg-slate-950 border-b border-slate-800">
                 <tr>
-                  <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest">User Details</th>
+                  <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest">User ID</th>
                   <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Security ID</th>
                   <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Password</th>
                   <th className="px-8 py-5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Status</th>
@@ -84,7 +90,7 @@ const AdminDashboard: React.FC = () => {
                 {profiles.map(profile => (
                   <tr key={profile.id} className="hover:bg-cyan-500/[0.02] transition-colors group">
                     <td className="px-8 py-6">
-                      <div className="text-xs font-bold text-white mb-1">{profile.email}</div>
+                      <div className="text-xs font-bold text-white mb-1">{formatDisplayId(profile.email)}</div>
                       <div className="text-[8px] font-mono text-slate-500 uppercase">Joined: {new Date(profile.created_at).toLocaleDateString()}</div>
                     </td>
                     <td className="px-8 py-6 text-center">

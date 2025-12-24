@@ -55,11 +55,13 @@ const App: React.FC = () => {
   }
 
   if (profile && !profile.is_approved && !profile.is_admin) {
+    const displayId = profile.email ? profile.email.split('@')[0] : 'User';
     return (
       <div className="h-screen w-full bg-[#020617] flex items-center justify-center p-6 text-center">
         <div className="max-w-md">
           <img src={logoUrl} alt="Logo" className="w-20 h-20 mx-auto mb-8 opacity-20 grayscale" />
           <h2 className="text-3xl font-black text-white tracking-tighter uppercase mb-4">Akaun Sedang Diproses</h2>
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-2">ID: {displayId}</p>
           <p className="text-slate-500 text-sm font-medium leading-relaxed">
             Sabar jap hampa. Admin tengah review akaun hampa. Sekali dah approved, kami akan bagitahu dan hampa boleh mula jana video SORA 2.0.
           </p>
@@ -67,7 +69,7 @@ const App: React.FC = () => {
             onClick={() => supabase.auth.signOut()}
             className="mt-10 text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-400 transition-colors"
           >
-            Log Out & Cuba Akaun Lain
+            Log Out & Cuba ID Lain
           </button>
         </div>
       </div>
