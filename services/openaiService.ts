@@ -4,6 +4,7 @@
  */
 
 // Mengisytiharkan process untuk mengelakkan ralat 'process is not defined' dalam browser
+// Vite akan menggantikan 'process.env.OPENAI_API_KEY' secara literal semasa build.
 declare const process: any;
 
 export const generateUGCPrompt = async (params: {
@@ -11,12 +12,13 @@ export const generateUGCPrompt = async (params: {
   gender: 'lelaki' | 'perempuan',
   platform: 'tiktok' | 'facebook'
 }) => {
-  // Menggunakan kaedah standard Vite (import.meta.env) yang paling dipercayai di Vercel,
-  // dengan fallback ke process.env yang telah di-define dalam vite.config.ts.
-  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '');
+  // PENTING: Jangan guna 'typeof process' check sebab ia akan sentiasa false di browser.
+  // Vite 'define' akan terus menggantikan string 'process.env.OPENAI_API_KEY' dengan nilai sebenar.
+  // Kita utamakan import.meta.env (cara standard Vite untuk VITE_ prefix).
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
 
   if (!apiKey || apiKey === '') {
-    throw new Error("OpenAI API Key tidak dikesan di Vercel environment. Sila pastikan VITE_OPENAI_API_KEY telah ditetapkan.");
+    throw new Error("OpenAI API Key tidak dikesan di Vercel environment. Sila pastikan VITE_OPENAI_API_KEY telah ditetapkan di 'Environment Variables' projek Vercel anda.");
   }
 
   const systemInstruction = `You are an elite Sora 2.0 Prompt Engineer and UGC Content Creator for the Malaysian market.
@@ -75,7 +77,7 @@ Create the ultimate 15-second Sora 2.0 prompt now.`;
 };
 
 export const generateOpenAIContent = async (prompt: string) => {
-  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '');
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) return "Ralat: API Key tidak dijumpai.";
 
   try {
