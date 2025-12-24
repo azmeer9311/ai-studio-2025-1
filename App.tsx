@@ -38,30 +38,6 @@ const App: React.FC = () => {
     return <AuthView onAuthSuccess={checkAuth} />;
   }
 
-  // Jika belum diluluskan oleh Admin (Kecuali Admin sendiri)
-  if (!profile.is_approved && !profile.is_admin) {
-    return (
-      <div className="h-screen w-full bg-[#020617] flex items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800 rounded-[2.5rem] p-10 shadow-2xl">
-          <img src={logoUrl} alt="Logo" className="w-16 h-16 mx-auto mb-6 logo-glow-animate" />
-          <h2 className="text-2xl font-black text-white tracking-tighter uppercase mb-4">Akaun Tertunda</h2>
-          <p className="text-slate-400 text-sm leading-relaxed mb-8">
-            ID hampa (<span className="text-cyan-400 font-bold">{profile.username}</span>) telah didaftarkan. Sila tunggu Admin meluluskan akaun hampa sebelum boleh masuk ke Studio.
-          </p>
-          <button 
-            onClick={() => {
-              localStorage.removeItem('azmeer_studio_session');
-              window.location.reload();
-            }}
-            className="w-full py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition-all"
-          >
-            Log Keluar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const renderView = () => {
     switch (activeView) {
       case AppView.SORA_STUDIO: return <SoraStudioView onViewChange={setActiveView} userProfile={profile} />;

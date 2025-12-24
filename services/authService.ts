@@ -51,7 +51,7 @@ export const loginLocal = async (userId: string, password: string): Promise<User
 };
 
 /**
- * Sistem Sign Up (Akaun baru sentiasa is_approved = false)
+ * Sistem Sign Up (Baru: Limit bermula dari 0)
  */
 export const signupLocal = async (userId: string, email: string, password: string): Promise<UserProfile> => {
   const users = getLocalUsers();
@@ -64,11 +64,11 @@ export const signupLocal = async (userId: string, email: string, password: strin
     id: `user-${Date.now()}`,
     username: userId,
     email: email,
-    password: password, // Disimpan secara local untuk rujukan admin
+    password: password,
     is_approved: false,
     is_admin: false,
-    video_limit: 5,
-    image_limit: 10,
+    video_limit: 0, // Kunci automatik bila daftar
+    image_limit: 0, // Kunci automatik bila daftar
     videos_used: 0,
     images_used: 0,
     created_at: new Date().toISOString()
@@ -93,7 +93,6 @@ export const getCurrentSession = (): UserProfile | null => {
   const session = localStorage.getItem(SESSION_KEY);
   if (!session) return null;
   
-  // Pastikan data session sentiasa sync dengan data user terbaru (contoh: bila admin dah approve)
   const sessionUser = JSON.parse(session) as UserProfile;
   const users = getLocalUsers();
   const latestUser = users.find(u => u.id === sessionUser.id);
@@ -125,6 +124,9 @@ export const canGenerate = async (userId: string, type: 'video' | 'image'): Prom
   const user = await getProfile(userId);
   if (!user) return false;
   if (user.is_admin) return true;
+  
+  // Mesti approved DAN ada limit
+  if (!user.is_approved) return false;
   
   if (type === 'video') return user.videos_used < user.video_limit;
   return user.images_used < user.image_limit;

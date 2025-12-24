@@ -66,7 +66,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
               value={userId} 
               onChange={(e) => setUserId(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
-              placeholder="Contoh: azmeer93"
+              placeholder="Contoh: user_id_hampa"
               required
             />
           </div>
@@ -79,7 +79,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 value={email} 
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 px-6 text-sm text-white outline-none focus:border-cyan-500/50 transition-all"
-                placeholder="Contoh: azmeer@gmail.com"
+                placeholder="Contoh: user@email.com"
                 required
               />
             </div>

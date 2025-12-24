@@ -30,6 +30,9 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   const pollingRef = useRef<number | null>(null);
   const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
 
+  // LOGIC LOCK: Admin sentiasa boleh guna. User biasa kena approved DAN ada limit > 0.
+  const isLocked = !userProfile.is_admin && (!userProfile.is_approved || userProfile.video_limit <= 0);
+
   useEffect(() => {
     return () => {
       if (pollingRef.current) window.clearTimeout(pollingRef.current);
@@ -37,6 +40,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isLocked) return;
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
@@ -87,7 +91,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   };
 
   const handleGenerate = async () => {
-    if (!prompt.trim()) return;
+    if (isLocked || !prompt.trim()) return;
     setIsGenerating(true);
     setProgress(0);
     setRenderedVideoUrl(null);
@@ -109,6 +113,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   };
 
   const handleMagicGenerate = async () => {
+    if (isLocked) return;
     if (!prompt.trim()) {
       alert("Hampa kena taip sikit pasal produk hampa kat dalam kotak prompt tu dulu, baru saya boleh tolong jana skrip.");
       return;
@@ -122,7 +127,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       });
       setPrompt(ugcPrompt);
       setDuration(15);
-      setAspectRatio('portrait'); // UGC auto portrait
+      setAspectRatio('portrait');
     } catch (error: any) {
       alert("Gagal hubungi OpenAI: " + error.message);
     } finally {
@@ -146,7 +151,15 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
           </p>
         </header>
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+        {isLocked && (
+          <div className="mb-8 p-6 bg-rose-500/10 border border-rose-500/20 rounded-3xl text-center">
+            <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest">
+              FUNGSI TERKUNCI: Sila tunggu pengesahan Admin dan pemberian limit sebelum boleh guna Studio.
+            </p>
+          </div>
+        )}
+
+        <div className={`grid grid-cols-1 xl:grid-cols-12 gap-8 items-start ${isLocked ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
           <div className="xl:col-span-5 space-y-6">
             
             {/* UGC Wizard Interface */}
@@ -165,6 +178,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                   <select 
                     value={wizardGender}
                     onChange={(e) => setWizardGender(e.target.value as any)}
+                    disabled={isLocked}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-xs text-white outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
                   >
                     <option value="perempuan">Wanita (Tudung)</option>
@@ -176,6 +190,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                   <select 
                     value={wizardPlatform}
                     onChange={(e) => setWizardPlatform(e.target.value as any)}
+                    disabled={isLocked}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-xs text-white outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
                   >
                     <option value="tiktok">TikTok Ad</option>
@@ -186,7 +201,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
               <button 
                 onClick={handleMagicGenerate}
-                disabled={isWizardLoading || isGenerating}
+                disabled={isLocked || isWizardLoading || isGenerating}
                 className="w-full py-4 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95"
               >
                 {isWizardLoading ? (
@@ -204,7 +219,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Upload Gambar (Optional)</label>
                   {!filePreview ? (
-                    <div onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all">
+                    <div onClick={() => !isLocked && fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all">
                       <svg className="w-8 h-8 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                       <span className="text-[9px] font-bold text-slate-600 uppercase">Guna sebagai rujukan</span>
                     </div>
@@ -214,7 +229,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                       <button onClick={clearFile} className="absolute top-2 right-2 bg-red-500 p-2 rounded-full text-white"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                     </div>
                   )}
-                  <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                  <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" disabled={isLocked} />
                 </div>
 
                 <div>
@@ -222,6 +237,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
+                    disabled={isLocked}
                     placeholder="Contoh: 'Pencuci muka organik untuk kulit berminyak'..."
                     className="w-full h-44 bg-slate-950/80 border border-slate-800 rounded-2xl p-5 text-xs text-slate-200 outline-none focus:border-cyan-500/50 transition-all resize-none custom-scrollbar font-medium leading-relaxed"
                   />
@@ -241,7 +257,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating || !prompt.trim()}
+                disabled={isLocked || isGenerating || !prompt.trim()}
                 className="w-full mt-8 bg-white text-slate-950 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95"
               >
                 {isGenerating ? (
