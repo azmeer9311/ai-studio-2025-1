@@ -1,18 +1,22 @@
+
 /**
  * OpenAI Service - Versi Optimal untuk Vercel & Sora 2.0
  */
+
+// Mengisytiharkan process untuk mengelakkan ralat 'process is not defined' dalam browser
+declare const process: any;
 
 export const generateUGCPrompt = async (params: {
   productDescription: string,
   gender: 'lelaki' | 'perempuan',
   platform: 'tiktok' | 'facebook'
 }) => {
-  // Vite akan menggantikan rujukan ini dengan nilai dari define block di vite.config.ts semasa proses build.
-  // Ini menyokong VITE_OPENAI_API_KEY yang telah hampa set di Vercel.
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Menggunakan kaedah standard Vite (import.meta.env) yang paling dipercayai di Vercel,
+  // dengan fallback ke process.env yang telah di-define dalam vite.config.ts.
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '');
 
-  if (!apiKey) {
-    throw new Error("OpenAI API Key tidak dikesan di Vercel environment.");
+  if (!apiKey || apiKey === '') {
+    throw new Error("OpenAI API Key tidak dikesan di Vercel environment. Sila pastikan VITE_OPENAI_API_KEY telah ditetapkan.");
   }
 
   const systemInstruction = `You are an elite Sora 2.0 Prompt Engineer and UGC Content Creator for the Malaysian market.
@@ -71,7 +75,7 @@ Create the ultimate 15-second Sora 2.0 prompt now.`;
 };
 
 export const generateOpenAIContent = async (prompt: string) => {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '');
   if (!apiKey) return "Ralat: API Key tidak dijumpai.";
 
   try {
