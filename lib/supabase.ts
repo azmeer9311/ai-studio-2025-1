@@ -1,8 +1,7 @@
 
 /**
  * Mock Supabase Client - Berasaskan LocalStorage
- * Dicipta untuk membolehkan deployment Vercel tanpa ralat 'Failed to fetch' atau isu env vars.
- * Mengekalkan semua struktur data asal.
+ * Dicipta untuk membolehkan deployment tanpa ralat 'Failed to fetch'.
  */
 
 const STORAGE_KEY_PROFILES = 'azmeer_ai_profiles';
@@ -11,8 +10,12 @@ const STORAGE_KEY_HISTORY = 'azmeer_ai_history';
 
 // Inisialisasi data pemula jika kosong
 const initLocalStorage = () => {
-  if (!localStorage.getItem(STORAGE_KEY_PROFILES)) {
-    // Profil admin lalai
+  const existingProfiles = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILES) || '[]');
+  
+  // Pastikan admin utama sentiasa wujud
+  const adminExists = existingProfiles.some((p: any) => p.email.toLowerCase() === 'azmeer93@azmeer.ai');
+  
+  if (!adminExists) {
     const adminProfile = {
       id: 'admin-uuid-123',
       email: 'azmeer93@azmeer.ai',
@@ -24,8 +27,10 @@ const initLocalStorage = () => {
       images_used: 0,
       created_at: new Date().toISOString()
     };
-    localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify([adminProfile]));
+    existingProfiles.push(adminProfile);
+    localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(existingProfiles));
   }
+  
   if (!localStorage.getItem(STORAGE_KEY_HISTORY)) {
     localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify([]));
   }
@@ -41,19 +46,20 @@ export const supabase = {
     },
     signInWithPassword: async ({ email, password }: any) => {
       const profiles = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILES) || '[]');
-      const user = profiles.find((p: any) => p.email === email);
-      // Mock logic: benarkan login jika user wujud (password diabaikan dalam mock ini demi kemudahan)
+      // Cari dengan perbandingan huruf kecil untuk mengelakkan ralat taip
+      const user = profiles.find((p: any) => p.email.toLowerCase() === email.toLowerCase());
+      
       if (user) {
         const session = { user: { id: user.id, email: user.email } };
         localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
         window.dispatchEvent(new Event('auth-change'));
         return { data: { session }, error: null };
       }
-      return { data: null, error: { message: "ID atau Kata Laluan salah." } };
+      return { data: null, error: { message: "ID tidak dijumpai dalam sistem." } };
     },
     signUp: async ({ email, password, options }: any) => {
       const profiles = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILES) || '[]');
-      if (profiles.find((p: any) => p.email === email)) {
+      if (profiles.find((p: any) => p.email.toLowerCase() === email.toLowerCase())) {
         return { data: null, error: { message: "ID telah didaftarkan." } };
       }
       const newProfile = {
@@ -90,45 +96,45 @@ export const supabase = {
     }
   },
   from: (table: string) => ({
-    select: (query: string) => ({
-      eq: (field: string, value: any) => ({
-        single: async () => {
-          const data = JSON.parse(localStorage.getItem(`azmeer_ai_${table}`) || '[]');
-          const item = data.find((i: any) => i[field] === value);
-          return { data: item || null, error: item ? null : { message: 'Not found' } };
+    select: (query: string) => {
+      const tableKey = `azmeer_ai_${table}`;
+      const data = JSON.parse(localStorage.getItem(tableKey) || '[]');
+      
+      return {
+        eq: (field: string, value: any) => ({
+          single: async () => {
+            const item = data.find((i: any) => i[field] === value);
+            return { data: item || null, error: item ? null : { message: 'Not found' } };
+          }
+        }),
+        order: async (field: string, { ascending }: any) => {
+          const sorted = [...data].sort((a, b) => {
+            if (ascending) return a[field] > b[field] ? 1 : -1;
+            return a[field] < b[field] ? 1 : -1;
+          });
+          return { data: sorted, error: null };
         }
-      }),
-      // Updated to be async for consistency with real Supabase usage
-      order: async (field: string, { ascending }: any) => {
-        const data = JSON.parse(localStorage.getItem(`azmeer_ai_${table}`) || '[]');
-        const sorted = [...data].sort((a, b) => {
-          if (ascending) return a[field] > b[field] ? 1 : -1;
-          return a[field] < b[field] ? 1 : -1;
-        });
-        return { data: sorted, error: null };
-      }
-    }),
+      };
+    },
     update: (updates: any) => ({
-      /**
-       * Fix: Modified eq to return a Promise directly instead of a custom thenable.
-       * This resolves "Type of 'await' operand must either be a valid promise..." errors in authService.ts
-       */
       eq: (field: string, value: any) => {
         return (async () => {
-          const data = JSON.parse(localStorage.getItem(`azmeer_ai_${table}`) || '[]');
+          const tableKey = `azmeer_ai_${table}`;
+          const data = JSON.parse(localStorage.getItem(tableKey) || '[]');
           const index = data.findIndex((i: any) => i[field] === value);
           if (index !== -1) {
             data[index] = { ...data[index], ...updates };
-            localStorage.setItem(`azmeer_ai_${table}`, JSON.stringify(data));
+            localStorage.setItem(tableKey, JSON.stringify(data));
           }
           return { error: null };
         })();
       }
     }),
     insert: async (item: any) => {
-      const data = JSON.parse(localStorage.getItem(`azmeer_ai_${table}`) || '[]');
+      const tableKey = `azmeer_ai_${table}`;
+      const data = JSON.parse(localStorage.getItem(tableKey) || '[]');
       data.push(item);
-      localStorage.setItem(`azmeer_ai_${table}`, JSON.stringify(data));
+      localStorage.setItem(tableKey, JSON.stringify(data));
       return { data: item, error: null };
     }
   })
