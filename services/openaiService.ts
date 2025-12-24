@@ -3,14 +3,16 @@
  * OpenAI Service - Versi Optimal untuk Vercel & Sora 2.0
  */
 
+declare const process: any;
+
 export const generateUGCPrompt = async (params: {
   productDescription: string,
   gender: 'lelaki' | 'perempuan',
   platform: 'tiktok' | 'facebook'
 }) => {
   // PENTING: Untuk Vite di Vercel, kita MESTI guna import.meta.env.VITE_...
-  // static replacement akan berlaku semasa build proses di Vercel.
-  const apiKey = (import.meta as any).env.VITE_OPENAI_API_KEY;
+  // Gunakan optional chaining (?.) dan fallback ke process.env yang di-define di vite.config.ts
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     throw new Error("OpenAI API Key (VITE_OPENAI_API_KEY) tidak dikesan. Sila pastikan anda telah menambahnya di 'Environment Variables' projek Vercel anda dan lakukan 'Redeploy'.");
@@ -72,7 +74,7 @@ Create the ultimate 15-second Sora 2.0 prompt now.`;
 };
 
 export const generateOpenAIContent = async (prompt: string) => {
-  const apiKey = (import.meta as any).env.VITE_OPENAI_API_KEY;
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) return "Ralat: API Key tidak dijumpai.";
 
   try {

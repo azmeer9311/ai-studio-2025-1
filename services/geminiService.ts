@@ -1,5 +1,7 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
+import { supabase } from "../lib/supabase";
+import { canGenerate, updateUsage } from "./authService";
 
 // Mengatasi ralat TS2580 dengan pengisytiharan global yang lebih luas
 declare const process: any;
@@ -111,6 +113,12 @@ export const generateSoraVideo = async (params: {
   aspect_ratio: 'landscape' | 'portrait';
   imageFile?: File;
 }) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sila log masuk.");
+  
+  const allowed = await canGenerate(user.id, 'video');
+  if (!allowed) throw new Error("Had penjanaan video hampa dah habis. Contact admin untuk tambah limit.");
+
   const formData = new FormData();
   formData.append('prompt', params.prompt);
   formData.append('model', 'sora-2'); 
@@ -131,6 +139,7 @@ export const generateSoraVideo = async (params: {
     });
 
     if (response.ok) {
+      await updateUsage(user.id, 'video');
       return await response.json();
     }
   } catch (e) {}
@@ -146,6 +155,7 @@ export const generateSoraVideo = async (params: {
     throw new Error(errorData?.detail?.message || "Gagal mulakan render video.");
   }
   
+  await updateUsage(user.id, 'video');
   return directResponse.json();
 };
 
@@ -200,6 +210,12 @@ export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampl
 }
 
 export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" | "9:16" = "1:1"): Promise<string | null> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sila log masuk.");
+  
+  const allowed = await canGenerate(user.id, 'image');
+  if (!allowed) throw new Error("Had penjanaan gambar hampa dah habis.");
+
   const apiKey = (process?.env?.API_KEY as string) || '';
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
@@ -216,6 +232,7 @@ export const generateImage = async (prompt: string, aspectRatio: "1:1" | "16:9" 
   
   const part = content.parts.find(p => p.inlineData);
   if (part && part.inlineData) {
+    await updateUsage(user.id, 'image');
     return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
   }
   return null;

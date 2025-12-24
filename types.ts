@@ -1,7 +1,21 @@
 
 export enum AppView {
   SORA_STUDIO = 'SORA_STUDIO',
-  HISTORY = 'HISTORY'
+  HISTORY = 'HISTORY',
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
+  AUTH = 'AUTH'
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  is_approved: boolean;
+  is_admin: boolean;
+  video_limit: number;
+  image_limit: number;
+  videos_used: number;
+  images_used: number;
+  created_at: string;
 }
 
 /**

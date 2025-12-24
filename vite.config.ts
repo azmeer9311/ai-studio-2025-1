@@ -11,7 +11,9 @@ export default defineConfig({
     // Memastikan API keys tersedia di frontend pada waktu build
     // Menyokong kedua-dua format (VITE_ prefix dan standard) untuk keserasian Vercel
     'process.env.API_KEY': JSON.stringify(process.env.VITE_API_KEY || process.env.API_KEY || ''),
-    'process.env.OPENAI_API_KEY': JSON.stringify(process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY || '')
+    'process.env.OPENAI_API_KEY': JSON.stringify(process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY || ''),
+    'process.env.VITE_SUPABASE_URL': JSON.stringify(process.env.VITE_SUPABASE_URL || ''),
+    'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || '')
   },
   server: {
     port: 3000,
