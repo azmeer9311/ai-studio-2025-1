@@ -3,22 +3,17 @@
  * OpenAI Service - Versi Optimal untuk Vercel & Sora 2.0
  */
 
-// Mengisytiharkan process untuk mengelakkan ralat 'process is not defined' dalam browser
-// Vite akan menggantikan 'process.env.OPENAI_API_KEY' secara literal semasa build.
-declare const process: any;
-
 export const generateUGCPrompt = async (params: {
   productDescription: string,
   gender: 'lelaki' | 'perempuan',
   platform: 'tiktok' | 'facebook'
 }) => {
-  // PENTING: Jangan guna 'typeof process' check sebab ia akan sentiasa false di browser.
-  // Vite 'define' akan terus menggantikan string 'process.env.OPENAI_API_KEY' dengan nilai sebenar.
-  // Kita utamakan import.meta.env (cara standard Vite untuk VITE_ prefix).
-  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  // PENTING: Untuk Vite di Vercel, kita MESTI guna import.meta.env.VITE_...
+  // static replacement akan berlaku semasa build proses di Vercel.
+  const apiKey = (import.meta as any).env.VITE_OPENAI_API_KEY;
 
-  if (!apiKey || apiKey === '') {
-    throw new Error("OpenAI API Key tidak dikesan di Vercel environment. Sila pastikan VITE_OPENAI_API_KEY telah ditetapkan di 'Environment Variables' projek Vercel anda.");
+  if (!apiKey) {
+    throw new Error("OpenAI API Key (VITE_OPENAI_API_KEY) tidak dikesan. Sila pastikan anda telah menambahnya di 'Environment Variables' projek Vercel anda dan lakukan 'Redeploy'.");
   }
 
   const systemInstruction = `You are an elite Sora 2.0 Prompt Engineer and UGC Content Creator for the Malaysian market.
@@ -30,19 +25,19 @@ STRICT CHARACTER REQUIREMENTS:
 - If Male: A handsome Malay man in his 30s, smart-casual influencer look, polite appearance, strictly NO earrings, NO necklaces, NO bracelets, wearing long trousers (no shorts).
 
 VIDEO STRUCTURE (15 SECONDS TOTAL):
-1. [0-3s] Hook: Exciting opening with a Medium Shot. The character introduces the product with high energy.
-2. [3-6s] Product Intro: Close-up on the product. Focus on premium packaging and textures.
-3. [6-9s] Benefit/Usage: Over-the-shoulder or POV shot showing the character using the product effectively in a real-life scenario.
-4. [9-12s] Emotional Reaction: Character looking directly at camera, smiling, Handheld Vlog style. High authenticity.
-5. [12-15s] CTA: Final shot with a clear call-to-action overlay.
+1. [0-3s] Hook: Exciting opening with a Medium Shot. The character introduces the product with high energy and a big smile.
+2. [3-6s] Product Intro: Extreme Close-up (ECU) on the product. Show the texture, premium packaging, or a satisfying "unboxing" moment.
+3. [6-9s] Benefit/Usage: POV or Over-the-shoulder shot showing the character applying or using the product. High-end cinematic lighting.
+4. [9-12s] Emotional Reaction: Close-up of character's face looking directly at the camera, nodding in approval, looking genuinely impressed. Handheld Vlog style.
+5. [12-15s] CTA: Final shot of the character holding the product near their face, with a clear call-to-action text overlay.
 
 LANGUAGE RULES:
-- VISUAL DESCRIPTIONS: Must be in English (detailed, cinematic, 4K, realistic lighting, specific camera movements like "slow pan", "rack focus", "handheld jitter").
-- DIALOGUE/SPEECH: Must be in casual, trendy "Bahasa Melayu Malaysia" (e.g., "Korang kena tengok ni...", "Paling best tau...", "Serious tak rugi beli!").
+- VISUAL DESCRIPTIONS: Must be in English (detailed, cinematic, 4K, realistic skin textures, 8k resolution, cinematic color grading, specific camera movements).
+- DIALOGUE/SPEECH: Must be in casual, trendy "Bahasa Melayu Malaysia" (e.g., "Korang perasan tak...", "Serious lawa gila...", "Wajib grab sekarang!").
 - TEXT OVERLAY: ONLY at the final 3 seconds. Text: "${params.platform === 'tiktok' ? 'Tekan beg kuning sekarang' : 'Tekan learn more untuk tahu lebih lanjut'}"
 
 OUTPUT FORMAT:
-Generate one single, cohesive long-form prompt for Sora 2.0. Describe each scene chronologically. Integrate the visual details AND the specific Malay dialogue to be spoken within the visual description for the AI's contextual understanding.`;
+Generate one single, cohesive long-form prompt for Sora 2.0. Describe each 3-second scene chronologically. Integrate the visual instructions AND the specific Malay dialogue to be spoken for each segment.`;
 
   const userPrompt = `Product: ${params.productDescription}
 Platform: ${params.platform}
@@ -77,7 +72,7 @@ Create the ultimate 15-second Sora 2.0 prompt now.`;
 };
 
 export const generateOpenAIContent = async (prompt: string) => {
-  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = (import.meta as any).env.VITE_OPENAI_API_KEY;
   if (!apiKey) return "Ralat: API Key tidak dijumpai.";
 
   try {
