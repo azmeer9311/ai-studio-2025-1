@@ -38,28 +38,21 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     if (showLoading) setLoading(true);
     
     try {
-      const response = await getAllHistory(1, 100); // Ambil lebih banyak untuk filtering
+      const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        const now = Date.now();
-        const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
-
         // FILTER LOGIC:
         // 1. Mesti jenis video/sora.
         // 2. Mesti user_id yang sama dengan userProfile.id (Self-only).
-        // 3. Mesti dijana kurang dari 3 jam yang lepas.
+        // HAD MASA 3 JAM DIBUANG ATAS PERMINTAAN USER.
         const filteredItems = items.filter((item: any) => {
           const isVideo = item.type?.toLowerCase().includes('video') || 
                           item.model_name?.toLowerCase().includes('sora');
           
-          // Pastikan perbandingan ID adalah string-safe
           const isMine = item.user_id?.toString() === userProfile.id.toString();
-          
-          const createdTime = new Date(item.created_at).getTime();
-          const isRecent = (now - createdTime) < THREE_HOURS_MS;
 
-          return isVideo && isMine && isRecent;
+          return isVideo && isMine;
         });
         
         setHistory(filteredItems);
@@ -157,10 +150,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
               <p className="text-cyan-500 text-[10px] font-black uppercase tracking-[0.5em]">azmeer ai</p>
             </div>
             <h2 className="text-5xl font-black text-white tracking-tighter uppercase leading-none">
-              Vault <span className="text-slate-800">History</span>
+              Vault <span className="text-slate-800">Archive</span>
             </h2>
             <p className="mt-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-              Media akan dipadam secara automatik selepas 3 jam.
+              Arkib kekal disimpan mengikut polisi Geminigen AI.
             </p>
           </div>
           
@@ -184,7 +177,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
         {history.length === 0 && !loading ? (
           <div className="text-center py-40 border-2 border-dashed border-slate-900 rounded-[3rem] bg-slate-900/10">
-            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Tiada media dalam 3 jam terakhir.</p>
+            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Tiada media ditemui dalam rekod hampa.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 pb-32">
@@ -244,7 +237,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                          <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-500 text-[8px] font-black uppercase tracking-widest border border-rose-500/20">Error</span>
                        )}
                        <span className="px-3 py-1 rounded-full bg-slate-950/80 text-white text-[8px] font-black uppercase tracking-widest border border-white/10 backdrop-blur-md">
-                         {item.model_name || 'SORA 2.0'}
+                         {item.model_name || 'AI CORE'}
                        </span>
                     </div>
                   </div>
