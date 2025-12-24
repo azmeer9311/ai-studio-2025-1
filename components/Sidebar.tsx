@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { AppView, UserProfile } from '../types';
-import { supabase } from '../lib/supabase';
+import { logoutLocal } from '../services/authService';
 
 interface SidebarProps {
   activeView: AppView;
@@ -22,8 +22,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, userProfile
 
   const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
+    logoutLocal();
+    window.location.reload();
   };
 
   return (
@@ -68,7 +69,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, userProfile
         <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Akses ID</span>
-            <span className="text-[9px] font-bold text-cyan-400 uppercase">{userProfile?.email.split('@')[0]}</span>
+            <span className="text-[9px] font-bold text-cyan-400 uppercase">{userProfile?.username}</span>
           </div>
           <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest mb-3">
             Video: {userProfile?.videos_used} / {userProfile?.is_admin ? '∞' : userProfile?.video_limit}

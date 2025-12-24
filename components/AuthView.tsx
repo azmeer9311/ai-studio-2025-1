@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { loginLocal, signupLocal } from '../services/authService';
 
 interface AuthViewProps {
   onAuthSuccess: () => void;
@@ -19,43 +19,19 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     setLoading(true);
     setError(null);
 
-    const internalEmail = `${userId.trim().toLowerCase()}@azmeer.ai`;
-
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ 
-          email: internalEmail, 
-          password 
-        });
-        if (error) throw error;
+        await loginLocal(userId, password);
+        onAuthSuccess();
       } else {
-        // Pendaftaran
-        const { data, error: signUpError } = await supabase.auth.signUp({ 
-          email: internalEmail, 
-          password,
-          options: {
-            data: {
-              username: userId,
-              real_email: email,
-              video_limit: 5,
-              image_limit: 10
-            }
-          }
-        });
-        
-        if (signUpError) throw signUpError;
-
-        // Manual insert password ke profile supaya admin boleh tengok
-        if (data.user) {
-          await supabase.from('profiles').update({ password }).eq('id', data.user.id);
-        }
-
+        await signupLocal(userId, email, password);
         alert("Pendaftaran berjaya! Tunggu admin approve akaun hampa.");
         setIsLogin(true);
+        setUserId('');
+        setPassword('');
       }
-      onAuthSuccess();
     } catch (err: any) {
-      setError(err.message === "Invalid login credentials" ? "ID atau Kata Laluan salah." : err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }

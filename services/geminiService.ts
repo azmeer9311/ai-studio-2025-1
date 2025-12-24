@@ -2,23 +2,14 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { canGenerate, updateUsage } from "./authService";
 
-// Mengatasi ralat TS2580 dengan pengisytiharan global yang lebih luas
-declare const process: any;
-
+// Standard Gemini/Veo configuration
 const GEMINIGEN_KEY = 'tts-fe8bac4d9a7681f6193dbedb69313c2d';
 const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
-// Helper to get Gemini API key safely
-const getGeminiApiKey = () => {
-  try {
-    const env = (import.meta as any).env || {};
-    return env.VITE_API_KEY || (typeof process !== 'undefined' ? process.env.API_KEY : '') || '';
-  } catch (e) {
-    return (typeof process !== 'undefined' ? process.env.API_KEY : '') || '';
-  }
-};
-
+/**
+ * Prepares a URL with necessary auth parameters for the Sora API.
+ */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
@@ -48,33 +39,43 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   return cleanUrl;
 };
 
+/**
+ * A more resilient fetch implementation that handles common network/CORS issues.
+ */
 async function robustFetch(url: string, options: RequestInit = {}) {
-  const headers = {
+  const headers: Record<string, string> = {
     'Accept': 'application/json',
     'x-api-key': GEMINIGEN_KEY,
-    ...options.headers,
   };
 
+  // Only set Content-Type if it's not FormData (browser sets boundary automatically)
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const finalHeaders = { ...headers, ...options.headers };
+
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, { ...options, headers: finalHeaders });
     if (response.ok) return response;
     
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.message || `API Error: ${response.status}`);
   } catch (e: any) {
-    const isNetworkError = e.name === 'TypeError' || 
-                           e.message?.includes('Failed to fetch') || 
-                           e.message?.includes('NetworkError');
+    const isFetchError = e.name === 'TypeError' || 
+                         e.message?.includes('Failed to fetch') || 
+                         e.message?.includes('NetworkError');
 
-    if (isNetworkError) {
-      console.warn("Direct fetch failed, attempting proxy fallback for:", url);
+    if (isFetchError) {
+      console.warn("Network error detected, attempting fallback for:", url);
+      // Fallback only for GET requests or specific known safe endpoints
       if (!options.method || options.method === 'GET') {
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
         try {
-          const proxyResponse = await fetch(proxyUrl, { ...options, headers });
+          const proxyResponse = await fetch(proxyUrl, { ...options, headers: finalHeaders });
           if (proxyResponse.ok) return proxyResponse;
         } catch (proxyErr) {
-          console.error("Proxy fallback also failed.");
+          console.error("Proxy fallback failed.");
         }
       }
     }
@@ -85,9 +86,7 @@ async function robustFetch(url: string, options: RequestInit = {}) {
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const targetUrl = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
   const authUrl = prepareAuthenticatedUrl(targetUrl);
-  
-  const response = await robustFetch(authUrl, options);
-  return await response.json();
+  return (await robustFetch(authUrl, options)).json();
 }
 
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
@@ -100,26 +99,11 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
     const response = await robustFetch(finalUrl);
     const blob = await response.blob();
     if (blob.size > 100) return URL.createObjectURL(blob);
-    throw new Error("Blob size too small");
+    throw new Error("Invalid blob size");
   } catch (e) {
-    console.warn("Media fetch failed, trying alternative proxies...");
-    const altProxies = [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}`,
-      `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`,
-    ];
-
-    for (const pUrl of altProxies) {
-      try {
-        const response = await fetch(pUrl);
-        if (response.ok) {
-          const blob = await response.blob();
-          if (blob && blob.size > 100) return URL.createObjectURL(blob);
-        }
-      } catch (err) {}
-    }
+    // Final desperation fallback for video blobs
+    return finalUrl;
   }
-
-  return finalUrl; 
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 50) => {
@@ -143,7 +127,7 @@ export const generateSoraVideo = async (params: {
   userId: string;
 }) => {
   const allowed = await canGenerate(params.userId, 'video');
-  if (!allowed) throw new Error("Had penjanaan video hampa dah habis. Sila hubungi Admin untuk tambah limit.");
+  if (!allowed) throw new Error("Had penjanaan hampa dah habis.");
 
   const formData = new FormData();
   formData.append('prompt', params.prompt);
@@ -155,29 +139,19 @@ export const generateSoraVideo = async (params: {
   }
 
   const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora`;
+  const response = await robustFetch(targetUrl, {
+    method: 'POST',
+    body: formData
+  });
 
-  try {
-    const response = await robustFetch(targetUrl, {
-      method: 'POST',
-      body: formData
-    });
-
-    const result = await response.json();
-    await updateUsage(params.userId, 'video');
-    return result;
-  } catch (e: any) {
-    console.error("Sora Generation Error:", e);
-    if (e.name === 'TypeError' || e.message?.includes('Failed to fetch')) {
-      throw new Error("Gagal menyambung ke API Sora. Masalah rangkaian atau CORS dikesan.");
-    }
-    throw e;
-  }
+  const result = await response.json();
+  await updateUsage(params.userId, 'video');
+  return result;
 };
 
+// Use process.env.API_KEY directly as per SDK requirements
 export const generateText = async (prompt: string) => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt
@@ -186,9 +160,7 @@ export const generateText = async (prompt: string) => {
 };
 
 export const generateTTS = async (text: string) => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) return null;
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text }] }],
@@ -204,6 +176,17 @@ export const generateTTS = async (text: string) => {
   return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 };
 
+// Manual implementation of Base64 encoding as per guidelines
+export const encodeBase64 = (bytes: Uint8Array) => {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
+// Manual implementation of Base64 decoding as per guidelines
 export const decodeBase64 = (base64: string) => {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -212,15 +195,6 @@ export const decodeBase64 = (base64: string) => {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
-};
-
-export const encodeBase64 = (bytes: Uint8Array) => {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 };
 
 export const decodeAudioData = async (
@@ -243,9 +217,7 @@ export const decodeAudioData = async (
 };
 
 export const generateImage = async (prompt: string, aspectRatio: string) => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
@@ -255,21 +227,18 @@ export const generateImage = async (prompt: string, aspectRatio: string) => {
   });
   
   const candidates = response.candidates;
-  if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
+  if (candidates?.[0]?.content?.parts) {
     for (const part of candidates[0].content.parts) {
       if (part.inlineData) {
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
   }
-  
   throw new Error("Tiada imej yang dijana.");
 };
 
 export const startVideoGeneration = async (prompt: string) => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   return await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
     prompt,
@@ -282,20 +251,13 @@ export const startVideoGeneration = async (prompt: string) => {
 };
 
 export const checkVideoStatus = async (operation: any) => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("Kunci API Gemini tidak ditemui.");
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   return await ai.operations.getVideosOperation({ operation });
 };
 
 export const fetchVideoContent = async (uri: string) => {
-  const apiKey = getGeminiApiKey();
-  const finalUri = `${uri}&key=${apiKey}`;
-  try {
-    const response = await robustFetch(finalUri);
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
-  } catch (e) {
-    throw new Error("Gagal memuatkan video Veo.");
-  }
+  const finalUri = `${uri}&key=${process.env.API_KEY}`;
+  const response = await robustFetch(finalUri);
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 };

@@ -6,8 +6,7 @@ import SoraStudioView from './components/SoraStudioView';
 import HistoryView from './components/HistoryView';
 import AdminDashboard from './components/AdminDashboard';
 import AuthView from './components/AuthView';
-import { supabase } from './lib/supabase';
-import { getProfile } from './services/authService';
+import { getCurrentSession } from './services/authService';
 
 const App: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -15,49 +14,15 @@ const App: React.FC = () => {
   const [activeView, setActiveView] = useState<AppView>(AppView.SORA_STUDIO);
   const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
 
-  const fetchUserSession = async () => {
+  const checkAuth = () => {
     setLoading(true);
-    try {
-      // Periksa jika URL placeholder digunakan (belum setup)
-      if (supabase.supabaseUrl.includes('placeholder.supabase.co')) {
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) throw sessionError;
-
-      if (session?.user) {
-        const userProfile = await getProfile(session.user.id);
-        setProfile(userProfile);
-      } else {
-        setProfile(null);
-      }
-    } catch (err) {
-      console.warn("Supabase connection issue (Failed to fetch). Hampa dah set VITE keys kat Vercel?", err);
-      setProfile(null);
-    } finally {
-      setLoading(false);
-    }
+    const session = getCurrentSession();
+    setProfile(session);
+    setLoading(false);
   };
 
   useEffect(() => {
-    fetchUserSession();
-    
-    // Elakkan ralat jika klien tidak sah
-    let subscription: any = null;
-    try {
-      const { data } = supabase.auth.onAuthStateChange(() => {
-        fetchUserSession();
-      });
-      subscription = data.subscription;
-    } catch (e) {}
-
-    return () => {
-      if (subscription) subscription.unsubscribe();
-    };
+    checkAuth();
   }, []);
 
   if (loading) {
@@ -68,11 +33,12 @@ const App: React.FC = () => {
     );
   }
 
+  // Jika belum login, paparkan skrin Auth
   if (!profile) {
-    return <AuthView onAuthSuccess={fetchUserSession} />;
+    return <AuthView onAuthSuccess={checkAuth} />;
   }
 
-  // Paparan jika akaun belum di-approve oleh admin
+  // Jika belum diluluskan oleh Admin (Kecuali Admin sendiri)
   if (!profile.is_approved && !profile.is_admin) {
     return (
       <div className="h-screen w-full bg-[#020617] flex items-center justify-center p-6 text-center">
@@ -80,10 +46,13 @@ const App: React.FC = () => {
           <img src={logoUrl} alt="Logo" className="w-16 h-16 mx-auto mb-6 logo-glow-animate" />
           <h2 className="text-2xl font-black text-white tracking-tighter uppercase mb-4">Akaun Tertunda</h2>
           <p className="text-slate-400 text-sm leading-relaxed mb-8">
-            ID hampa (<span className="text-cyan-400 font-bold">{profile.email?.split('@')[0] || profile.username}</span>) telah didaftarkan. Sila tunggu Admin meluluskan akaun hampa sebelum boleh masuk ke Studio.
+            ID hampa (<span className="text-cyan-400 font-bold">{profile.username}</span>) telah didaftarkan. Sila tunggu Admin meluluskan akaun hampa sebelum boleh masuk ke Studio.
           </p>
           <button 
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => {
+              localStorage.removeItem('azmeer_studio_session');
+              window.location.reload();
+            }}
             className="w-full py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition-all"
           >
             Log Keluar
@@ -119,7 +88,15 @@ const App: React.FC = () => {
                 <p className="text-[8px] font-bold text-cyan-500 tracking-[0.2em] uppercase opacity-80 leading-none">ai studio</p>
               </div>
             </div>
-            <button onClick={() => supabase.auth.signOut()} className="text-[8px] font-black text-rose-500 uppercase tracking-widest border border-rose-500/20 px-3 py-1.5 rounded-lg">Exit</button>
+            <button 
+              onClick={() => {
+                localStorage.removeItem('azmeer_studio_session');
+                window.location.reload();
+              }} 
+              className="text-[8px] font-black text-rose-500 uppercase tracking-widest border border-rose-500/20 px-3 py-1.5 rounded-lg"
+            >
+              Exit
+            </button>
           </div>
 
           <nav className="flex px-4 pb-3 gap-2">
@@ -139,16 +116,6 @@ const App: React.FC = () => {
             >
               Vault
             </button>
-            {profile.is_admin && (
-              <button 
-                onClick={() => setActiveView(AppView.ADMIN_DASHBOARD)}
-                className={`flex-1 py-3 rounded-xl transition-all border font-black text-[10px] uppercase tracking-widest ${
-                  activeView === AppView.ADMIN_DASHBOARD ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400' : 'bg-slate-900/50 border-slate-800 text-slate-500'
-                }`}
-              >
-                Admin
-              </button>
-            )}
           </nav>
         </header>
 
