@@ -1,11 +1,43 @@
 
 /**
- * Mock Supabase Client
- * Fixes: "supabaseKey is required" error.
- * Handles: Local persistence without needing external API keys.
+ * Resilient Database Layer
+ * Acts as a local Supabase instance to prevent crashes when keys are missing
+ * and ensures data persistence for users and admins.
  */
-const getStorage = (key: string) => JSON.parse(localStorage.getItem(`azmeer_db_${key}`) || '[]');
-const setStorage = (key: string, data: any) => localStorage.setItem(`azmeer_db_${key}`, JSON.stringify(data));
+const STORAGE_PREFIX = 'azmeer_v2_';
+
+const getStorage = (key: string) => {
+  const data = localStorage.getItem(STORAGE_PREFIX + key);
+  return data ? JSON.parse(data) : [];
+};
+
+const setStorage = (key: string, data: any) => {
+  localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(data));
+};
+
+// Auto-initialize a Master Admin if the database is empty
+const initDb = () => {
+  const users = getStorage('user_profiles');
+  if (users.length === 0) {
+    const masterAdmin = {
+      id: 'master-admin-001',
+      username: 'admin',
+      email: 'admin@azmeer.ai',
+      phone: '0000000000',
+      password: 'admin',
+      is_approved: true,
+      is_admin: true,
+      video_limit: 999999,
+      image_limit: 999999,
+      videos_used: 0,
+      images_used: 0,
+      created_at: new Date().toISOString()
+    };
+    setStorage('user_profiles', [masterAdmin]);
+  }
+};
+
+initDb();
 
 export const supabase = {
   from: (table: string) => {
@@ -15,21 +47,27 @@ export const supabase = {
         
         const chain = {
           eq: (field: string, value: any) => {
-            data = data.filter((item: any) => item[field] === value);
+            data = data.filter((item: any) => {
+              if (item[field] === undefined) return false;
+              return String(item[field]) === String(value);
+            });
             return chain;
           },
           order: (field: string, { ascending = true } = {}) => {
             data.sort((a: any, b: any) => {
-              if (ascending) return a[field] > b[field] ? 1 : -1;
-              return a[field] < b[field] ? 1 : -1;
+              const valA = a[field];
+              const valB = b[field];
+              if (ascending) return valA > valB ? 1 : -1;
+              return valA < valB ? 1 : -1;
             });
             return chain;
           },
           single: async () => {
-            return { data: data[0] || null, error: null };
+            return { data: data[0] || null, error: data[0] ? null : { message: 'Not found' } };
           },
+          // Allows calling as a promise
           then: async (resolve: any) => {
-            resolve({ data, error: null });
+            return resolve({ data, error: null });
           }
         };
         return chain;
@@ -44,18 +82,17 @@ export const supabase = {
         data.push(newRecord);
         setStorage(table, data);
         
-        const chain = {
+        return {
           select: () => ({
             single: async () => ({ data: newRecord, error: null })
           })
         };
-        return chain;
       },
       update: (updates: any) => {
-        const chain = {
+        return {
           eq: (field: string, value: any) => {
             const data = getStorage(table);
-            const index = data.findIndex((item: any) => item[field] === value);
+            const index = data.findIndex((item: any) => String(item[field]) === String(value));
             let updatedItem = null;
             if (index !== -1) {
               data[index] = { ...data[index], ...updates };
@@ -65,17 +102,16 @@ export const supabase = {
             
             return {
               select: () => ({
-                single: async () => ({ data: updatedItem, error: null })
+                single: async () => ({ data: updatedItem, error: updatedItem ? null : { message: 'Update target not found' } })
               })
             };
           }
         };
-        return chain;
       },
       delete: () => ({
         eq: (field: string, value: any) => {
           const data = getStorage(table);
-          const filtered = data.filter((item: any) => item[field] !== value);
+          const filtered = data.filter((item: any) => String(item[field]) !== String(value));
           setStorage(table, filtered);
           return { error: null };
         }

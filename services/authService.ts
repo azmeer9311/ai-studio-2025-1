@@ -60,7 +60,9 @@ export const logoutLocal = () => {
 
 export const getCurrentSession = (): UserProfile | null => {
   const session = localStorage.getItem(SESSION_KEY);
-  return session ? JSON.parse(session) : null;
+  if (!session) return null;
+  const profile = JSON.parse(session);
+  return profile;
 };
 
 export const getProfile = async (userId: string): Promise<UserProfile | null> => {
@@ -75,6 +77,9 @@ export const getProfile = async (userId: string): Promise<UserProfile | null> =>
 export const updateUsage = async (userId: string, type: 'video' | 'image') => {
   const current = await getProfile(userId);
   if (!current) return;
+
+  // Admin remains unlimited
+  if (current.is_admin) return;
 
   const updates = type === 'video' 
     ? { videos_used: current.videos_used + 1 }
@@ -95,7 +100,10 @@ export const updateUsage = async (userId: string, type: 'video' | 'image') => {
 export const canGenerate = async (userId: string, type: 'video' | 'image'): Promise<boolean> => {
   const user = await getProfile(userId);
   if (!user) return false;
+  
+  // FIXED: Admin MUST be unlimited
   if (user.is_admin) return true;
+  
   if (!user.is_approved) return false;
   
   if (type === 'video') return user.videos_used < user.video_limit;
@@ -111,7 +119,13 @@ export const getAllProfiles = async (): Promise<UserProfile[]> => {
 };
 
 export const updateProfileAdmin = async (userId: string, updates: Partial<UserProfile>) => {
-  await supabase.from('user_profiles').update(updates).eq('id', userId);
+  const { data } = await supabase.from('user_profiles').update(updates).eq('id', userId).select().single();
+  
+  // If we updated the currently logged in admin, update their session too
+  const session = getCurrentSession();
+  if (session && session.id === userId && data) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  }
 };
 
 export const deleteProfileAdmin = async (userId: string) => {

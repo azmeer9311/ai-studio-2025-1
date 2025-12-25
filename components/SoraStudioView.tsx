@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
+import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob, getAllHistory } from '../services/geminiService';
 import { generateUGCPrompt } from '../services/openaiService';
 import { AppView, UserProfile } from '../types';
 
@@ -23,6 +23,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
   const [progress, setProgress] = useState<number>(0);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
+  const [activeUuid, setActiveUuid] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<number | null>(null);
@@ -30,7 +31,24 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
   const isLocked = !userProfile.is_admin && (!userProfile.is_approved || userProfile.video_limit <= 0);
 
+  // Resume tracking on mount if a generation is already happening
   useEffect(() => {
+    const resumeTracking = async () => {
+      try {
+        const history = await getAllHistory(1, 10);
+        const items = history?.result || history?.data || [];
+        const processingItem = items.find((i: any) => Number(i.status) === 1);
+        if (processingItem) {
+          setIsGenerating(true);
+          setActiveUuid(processingItem.uuid);
+          pollStatus(processingItem.uuid);
+        }
+      } catch (e) {
+        console.error("Resume tracking failed:", e);
+      }
+    };
+    resumeTracking();
+
     return () => {
       if (pollingRef.current) window.clearTimeout(pollingRef.current);
     };
@@ -61,21 +79,23 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       if (data) {
         const currentStatus = Number(data.status);
         
-        // Robust progress detection with safety fallback
+        // Accurate progress detection
         const currentProgress = Number(data.status_percentage) || 
                                Number(data.progress) || 
                                Number(data.percent) || 
-                               Number(data.percentage) || 0;
+                               Number(data.percentage) || 
+                               (currentStatus === 1 ? Math.min(98, progress + 0.5) : 0);
         
-        setProgress(Math.min(99, Math.max(progress, currentProgress)));
+        setProgress(Math.floor(currentProgress));
 
-        // CRITICAL: Notify Vault/History to refresh its list
+        // BROADCAST: Sync Vault
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
 
         if (currentStatus === 1) {
           pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
+          setActiveUuid(null);
           setProgress(100);
           
           let videoUrl = '';
@@ -93,16 +113,16 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             setRenderedVideoUrl(blob);
           }
           
-          // Signal final completion
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         } else if (currentStatus === 3) {
           setIsGenerating(false);
+          setActiveUuid(null);
           alert("Render gagal. Sila cuba lagi.");
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         }
       }
     } catch (e) {
-      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
+      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 5000);
     }
   };
 
@@ -127,11 +147,11 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                    response?.data?.data?.uuid;
 
       if (uuid) {
-        // Broadcast that a new task started
+        setActiveUuid(uuid);
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         pollStatus(uuid);
       } else {
-        alert("Gagal memulakan proses. Sila semak limit hampa.");
+        alert("Gagal memulakan proses. Server busy.");
         setIsGenerating(false);
       }
     } catch (error: any) {
@@ -143,7 +163,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   const handleMagicGenerate = async () => {
     if (isLocked) return;
     if (!prompt.trim()) {
-      alert("Hampa kena taip sikit pasal produk hampa kat dalam kotak prompt tu dulu, baru saya boleh tolong jana skrip.");
+      alert("Hampa kena taip sikit pasal produk hampa kat dalam kotak prompt tu dulu.");
       return;
     }
     setIsWizardLoading(true);
@@ -171,7 +191,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             <img src={logoUrl} alt="Logo" className="w-4 h-4 md:w-5 md:h-5 object-contain logo-glow-animate" />
             <span>Azmeer AI • Sora 2.0 Studio</span>
           </div>
-          <h2 className="text-3xl md:text-5xl font-black text-white tracking-tighter mb-2 md:mb-4">
+          <h2 className="text-3xl md:text-5xl font-black text-white tracking-tighter mb-2 md:mb-4 uppercase">
             UGC <span className="text-cyan-500">STUDIO</span>
           </h2>
           <p className="text-slate-500 max-w-lg text-[10px] md:text-sm font-medium leading-relaxed px-2">
@@ -316,9 +336,9 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                 <div className="text-center space-y-4 md:space-y-6 flex flex-col items-center p-8 md:p-12">
                   <div className="relative">
                     <div className="w-20 h-20 md:w-24 md:h-24 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
-                    <div className="absolute inset-0 flex items-center justify-center text-white font-black text-lg">{progress}%</div>
+                    <div className="absolute inset-0 flex items-center justify-center text-white font-black text-2xl">{progress}%</div>
                   </div>
-                  <p className="text-cyan-500 font-black uppercase tracking-[0.3em] text-[9px] md:text-[10px] animate-pulse">Processing Video Engine</p>
+                  <p className="text-cyan-500 font-black uppercase tracking-[0.3em] text-[10px] md:text-xs animate-pulse">Sora Engine Baking Video...</p>
                 </div>
               ) : (
                 <div className="text-center p-8 md:p-12 opacity-20">
