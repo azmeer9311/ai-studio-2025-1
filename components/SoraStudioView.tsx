@@ -35,7 +35,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   useEffect(() => {
     const resumeTracking = async () => {
       try {
-        const historyData = await getAllHistory(1, 5);
+        const historyData = await getAllHistory(1, 10);
         const items = historyData?.result || historyData?.data || [];
         const bakingItem = items.find((i: any) => Number(i.status) === 1);
         if (bakingItem) {
@@ -79,20 +79,22 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       if (data) {
         const currentStatus = Number(data.status);
         
-        // Dynamic progress calculation
-        const currentProgress = Number(data.status_percentage) || 
-                               Number(data.progress) || 
-                               Number(data.percent) || 
-                               Number(data.percentage) || 
-                               (currentStatus === 1 ? Math.min(99, progress + 1) : 0);
+        // Priority progress detection: Prefer API fields over local increments
+        const apiProgress = Number(data.status_percentage) || 
+                           Number(data.progress) || 
+                           Number(data.percent) || 
+                           Number(data.percentage);
+        
+        const currentProgress = apiProgress || (currentStatus === 1 ? Math.min(99, progress + 2) : 0);
         
         setProgress(Math.floor(currentProgress));
 
-        // BROADCAST: Let the Vault (HistoryView) know it's time to refresh its data
-        window.dispatchEvent(new CustomEvent('sync_vault_signal'));
+        // BROADCAST: Immediately signal HistoryView to refresh its data with the latest from API
+        window.dispatchEvent(new CustomEvent('sync_vault_signal', { detail: { uuid, status: currentStatus, progress: currentProgress } }));
 
         if (currentStatus === 1) {
-          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
+          // Poll every 2 seconds for high-speed synchronization
+          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 2000);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
           setActiveUuid(null);
@@ -113,6 +115,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             setRenderedVideoUrl(blob);
           }
           
+          // Final sync signal to ensure Vault shows the finished item
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         } else if (currentStatus === 3) {
           setIsGenerating(false);
@@ -122,8 +125,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         }
       }
     } catch (e) {
-      // Retry polling on error
-      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 5000);
+      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
     }
   };
 
@@ -149,7 +151,6 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
       if (uuid) {
         setActiveUuid(uuid);
-        // Force an immediate history refresh
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         pollStatus(uuid);
       } else {

@@ -48,26 +48,30 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
     
     try {
+      // Fetch latest 100 items to ensure all recent generations are captured
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
+        // BROAD FILTER: Include anything that looks like a video or is currently processing
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
-          const status1 = Number(item.status) === 1;
-          return status1 || type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
+          const isSoraVideo = type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
+          const isProcessing = Number(item.status) === 1;
+          const isCompleted = Number(item.status) === 2;
+          return isProcessing || isSoraVideo || isCompleted;
         });
         
         setHistory(filteredItems);
 
-        // SYNC: Poll aggressively if any video is BAKING (Status 1)
+        // SYNC: Poll aggressively every 2 seconds if any video is BAKING (Status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          // Poll every 2 seconds for high-fidelity updates
+          // Rapid refresh to match geminigen.ai speed
           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
         }
       } else {
@@ -84,10 +88,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Safety sync every 20s
-    const backgroundInterval = setInterval(() => fetchHistory(false), 20000);
+    // Safety sync every 15s to catch external updates from geminigen.ai
+    const backgroundInterval = setInterval(() => fetchHistory(false), 15000);
     
-    // LISTEN for signals from Studio
+    // LISTEN for signals from SoraStudioView when polling occurs there
     const handleSync = () => fetchHistory(false);
     window.addEventListener('sync_vault_signal', handleSync);
     
