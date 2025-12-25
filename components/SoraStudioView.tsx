@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 import { generateUGCPrompt } from '../services/openaiService';
@@ -16,12 +17,10 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   const [duration, setDuration] = useState<10 | 15>(15);
   const [aspectRatio, setAspectRatio] = useState<'landscape' | 'portrait'>('portrait');
   
-  // UGC Wizard States
   const [isWizardLoading, setIsWizardLoading] = useState(false);
   const [wizardGender, setWizardGender] = useState<'lelaki' | 'perempuan'>('perempuan');
   const [wizardPlatform, setWizardPlatform] = useState<'tiktok' | 'facebook'>('tiktok');
 
-  // Progress states
   const [progress, setProgress] = useState<number>(0);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
   
@@ -57,21 +56,25 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   const pollStatus = async (uuid: string) => {
     try {
       const response = await getSpecificHistory(uuid);
-      // More robust data extraction based on actual API response patterns
       const data = response?.data || response?.result || (response?.uuid ? response : null);
       
       if (data) {
         const currentStatus = Number(data.status);
-        // Ensure we handle both status_percentage and progress fields if they vary
-        const currentProgress = Number(data.status_percentage) || Number(data.progress) || 0;
+        // Kesan pelbagai nama medan peratus dari API (lebih "greedy")
+        const currentProgress = Number(data.status_percentage) || 
+                               Number(data.progress) || 
+                               Number(data.percent) || 
+                               Number(data.percentage) || 0;
         
         setProgress(currentProgress);
 
         if (currentStatus === 1) {
+          // Masih memproses, tanya lagi dlm 3 saat
           pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
           setProgress(100);
+          
           let videoUrl = '';
           if (data.generated_video && data.generated_video.length > 0) {
             videoUrl = data.generated_video[0].video_url || data.generated_video[0].video_uri;
@@ -81,17 +84,21 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
               videoUrl = parsed.video_url || (Array.isArray(parsed) ? parsed[0]?.video_url : '');
             } catch (e) {}
           }
+          
           if (videoUrl) {
             const blob = await fetchVideoAsBlob(videoUrl);
             setRenderedVideoUrl(blob);
           }
+          
+          // Isyaratkan History/Vault untuk refresh automatik
+          localStorage.setItem('sync_vault', Date.now().toString());
         } else if (currentStatus === 3) {
           setIsGenerating(false);
-          alert("Render gagal.");
+          alert("Render gagal. Sila cuba lagi.");
         }
       }
     } catch (e) {
-      // Retry on network error
+      // Jika error connection, cuba lagi dlm 3 saat
       pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
     }
   };
@@ -109,9 +116,17 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         imageFile: selectedFile || undefined,
         userId: userProfile.id
       });
-      // Handle response structure differences
-      const uuid = response?.data?.uuid || response?.uuid || response?.result?.uuid || response?.result?.data?.uuid;
+      
+      const uuid = response?.data?.uuid || 
+                   response?.uuid || 
+                   response?.result?.uuid || 
+                   response?.result?.data?.uuid || 
+                   response?.data?.data?.uuid;
+
       if (uuid) {
+        localStorage.setItem('last_video_uuid', uuid);
+        // Trigger sync awal supaya item 'Processing' muncul dlm vault
+        localStorage.setItem('sync_vault', Date.now().toString());
         pollStatus(uuid);
       } else {
         alert("Gagal memulakan proses. Sila semak limit hampa.");
@@ -263,7 +278,6 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                 </div>
               </div>
 
-              {/* Action Buttons: Script Generator is now ABOVE Generate Video */}
               <div className="mt-6 md:mt-8 space-y-3">
                 <button 
                   onClick={handleMagicGenerate}

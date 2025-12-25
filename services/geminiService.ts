@@ -9,19 +9,15 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menambah 'key' ke dalam URL untuk media.
- * PENTING: Mengesan Signed S3 URLs untuk mengelakkan ralat Signature Mismatch.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
-  // Jika URL sudah ada tandatangan S3 (Cloudflare R2), jangan ubah apa-apa.
-  // Menambah parameter pada signed URL akan merosakkan signature tersebut.
   if (cleanUrl.includes('X-Amz-Signature') || cleanUrl.includes('X-Amz-Algorithm')) {
     return cleanUrl;
   }
 
-  // Jika URL adalah path relatif, tambah domain CDN
   if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
     cleanUrl = `${GEMINIGEN_CDN_URL}${path}`;
@@ -31,7 +27,6 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 
   try {
     const urlObj = new URL(cleanUrl);
-    // Hanya tambah key jika bukan signed URL dan key belum ada
     if (!urlObj.searchParams.has('key')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
@@ -45,19 +40,12 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   }
 };
 
-/**
- * Menghasilkan URL yang diproksi untuk memintas ralat CORS.
- */
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
   const authUrl = prepareAuthenticatedUrl(url);
-  // Menggunakan proxy untuk memintas sekatan CORS browser
   return `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
 };
 
-/**
- * Fungsi fetch yang memintas ralat CORS menggunakan proxy untuk permintaan API.
- */
 async function robustFetch(url: string, options: RequestInit = {}) {
   const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
   
@@ -88,10 +76,6 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
   return await response.json();
 }
 
-/**
- * Memuatkan video sebagai Blob melalui proxy.
- * Ini adalah cara paling stabil untuk memainkan dan memuat turun video yang ada ralat CORS.
- */
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
   const authUrl = prepareAuthenticatedUrl(url);

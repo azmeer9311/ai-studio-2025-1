@@ -1,15 +1,28 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Ambil URL dan Key dari environment variables yang telah di-inject oleh Vite
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+/**
+ * Fungsi pembantu untuk mengambil nilai dari process.env atau import.meta.env
+ */
+const getEnvValue = (key: string): string => {
+  // @ts-ignore
+  const val = (process?.env?.[key]) || 
+              (import.meta as any).env?.[key] || 
+              (window as any).process?.env?.[key] || 
+              '';
+  return val;
+};
 
-if (!supabaseUrl || !supabaseKey) {
-  console.warn("Supabase credentials tidak ditemui. Sila pastikan VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY telah ditetapkan.");
-}
+const supabaseUrl = getEnvValue('VITE_SUPABASE_URL') || 'https://nbhlclzejwwqozkbixkk.supabase.co';
+const supabaseKey = getEnvValue('VITE_SUPABASE_ANON_KEY');
 
+// Sistem akan menggunakan placeholder jika kunci belum dimasukkan di AI Studio
+// Ini untuk mengelakkan aplikasi crash sebelum user sempat masukkan key
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseUrl,
   supabaseKey || 'placeholder-key'
 );
+
+if (!supabaseKey) {
+  console.warn("NOTIS: Sila masukkan VITE_SUPABASE_ANON_KEY di tab Environment Variables (ikon kunci) untuk membolehkan login.");
+}

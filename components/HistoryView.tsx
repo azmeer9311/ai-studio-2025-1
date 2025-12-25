@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, getProxiedMediaUrl, fetchVideoAsBlob } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
@@ -14,19 +15,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
   const pollingTimerRef = useRef<number | null>(null);
 
-  /**
-   * Fungsi Pencarian URL Video (Deep Resolution)
-   */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
-    
-    // 1. Periksa array generated_video
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const v = item.generated_video[0];
       return v.video_url || v.video_uri || v.url || '';
     }
-
-    // 2. Periksa medan generate_result
     if (item.generate_result) {
       const res = item.generate_result;
       if (typeof res === 'string') {
@@ -44,8 +38,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         return res.video_url || res.video_uri || res.url || '';
       }
     }
-
-    // 3. Backup fields
     return item.video_url || item.video_uri || item.url || item.file_download_url || '';
   };
 
@@ -60,7 +52,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // Filter specifically for video or sora related tasks
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
@@ -69,14 +60,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
-        // Check if we have active processing tasks (status 1)
+        // Jika ada item yang masih 'status 1' (Processing), teruskan polling pantas
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          // If tasks are processing, poll more frequently (every 3 seconds)
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 3000);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 4000);
         }
       } else {
         setHistory([]);
@@ -89,16 +79,24 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
   }, []);
 
-  // Initial fetch and standard interval sync
   useEffect(() => {
     fetchHistory(true);
     
-    // Background global sync every 15 seconds to catch new items
+    // Background sync global setiap 15 saat (Safety net)
     const globalSync = setInterval(() => fetchHistory(false), 15000);
+    
+    // LISTENER: Refresh Vault bila ada isyarat dari StudioView (Storage API)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sync_vault') {
+        fetchHistory(false);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
     
     return () => {
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(globalSync);
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, [fetchHistory]);
 
@@ -142,13 +140,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       
       if (url) {
         const blobUrl = await fetchVideoAsBlob(url);
-        
         const link = document.createElement('a');
         link.href = blobUrl;
         link.setAttribute('download', `SoraVideo_${uuid.substring(0, 8)}.mp4`);
         document.body.appendChild(link);
         link.click();
-        
         setTimeout(() => {
           document.body.removeChild(link);
           window.URL.revokeObjectURL(blobUrl);
@@ -204,7 +200,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
               const videoSrc = activeVideo[item.uuid];
               const processing = isProcessing[item.uuid];
               const status = Number(item.status);
-              const progress = item.status_percentage || item.progress || 0;
+              // Cari peratus dlm pelbagai medan secara dinamik
+              const progress = item.status_percentage || (item as any).progress || (item as any).percent || 0;
 
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/30 border border-slate-800/50 rounded-[2rem] overflow-hidden hover:border-cyan-500/30 transition-all duration-500 flex flex-col shadow-lg">
