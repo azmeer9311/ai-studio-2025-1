@@ -17,14 +17,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
-    
-    // 1. Array generated_video (Format Dokumentasi)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const vid = item.generated_video[0];
       return vid.video_url || vid.video_uri || '';
     }
-
-    // 2. generate_result
     if (item.generate_result) {
       if (typeof item.generate_result === 'string') {
         if (item.generate_result.startsWith('http')) return item.generate_result;
@@ -39,24 +35,25 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   };
 
   const fetchHistory = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+      setError(null);
+    }
     
     try {
       const response = await getAllHistory(1, 100); 
-      // AllOrigins pulangkan contents, tapi robustFetch dah tolong parse
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
         const filteredItems = items.filter((item: any) => {
           const isVideo = item.type?.toLowerCase().includes('video') || 
                           item.model_name?.toLowerCase().includes('sora');
-          const isMine = item.user_id?.toString() === userProfile.id.toString();
+          const isMine = String(item.user_id) === String(userProfile.id);
           return isVideo && isMine;
         });
         
         setHistory(filteredItems);
 
-        // Polling Task Processing
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         if (hasActiveTasks) {
@@ -87,7 +84,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
       let url = resolveVideoUrl(item);
-
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
@@ -102,8 +98,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         throw new Error("Punca media tidak dijumpai.");
       }
     } catch (e: any) {
-      console.error("Gagal memuatkan video:", e);
-      alert(`Preview Error: Sila muat turun video secara terus.`);
+      alert(`Preview Gagal. Sila muat turun video secara terus.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -112,22 +107,17 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const handleDownload = async (item: SoraHistoryItem) => {
     const uuid = item.uuid;
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
-    
     try {
       let url = resolveVideoUrl(item);
       if (!url) {
         const details = await getSpecificHistory(uuid);
         url = resolveVideoUrl(details?.data || details?.result || details);
       }
-
       if (url) {
         const finalUrl = prepareAuthenticatedUrl(url);
         window.open(finalUrl, '_blank');
-      } else {
-        throw new Error("Punca media tidak dijumpai.");
       }
     } catch (e: any) {
-      console.error("Gagal muat turun:", e);
       alert(`Muat turun gagal.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
@@ -146,11 +136,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <h2 className="text-5xl font-black text-white tracking-tighter uppercase leading-none">
               Vault <span className="text-slate-800">Archive</span>
             </h2>
-            <p className="mt-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-              Arkib hampa disimpan selamat di Geminigen Cloud.
-            </p>
           </div>
-          
           <button 
             onClick={() => fetchHistory(true)} 
             disabled={loading} 
@@ -164,12 +150,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         </header>
 
         {error && (
-          <div className="mb-12 p-8 rounded-3xl bg-rose-500/5 border border-rose-500/20 text-rose-500 text-center">
-            <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
+          <div className="mb-12 p-8 rounded-3xl bg-rose-500/5 border border-rose-500/20 text-rose-500 flex flex-col items-center gap-4 text-center">
+            <p className="text-[11px] font-black uppercase tracking-widest">{error}</p>
           </div>
         )}
 
-        {history.length === 0 && !loading ? (
+        {history.length === 0 && !loading && !error ? (
           <div className="text-center py-40 border-2 border-dashed border-slate-900 rounded-[3rem] bg-slate-900/10">
             <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Tiada media ditemui dalam rekod hampa.</p>
           </div>
@@ -183,7 +169,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/30 border border-slate-800/50 rounded-[2.5rem] overflow-hidden hover:border-cyan-500/30 transition-all duration-500 flex flex-col">
-                  {/* Media Viewport */}
                   <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden">
                     {videoSrc ? (
                       <video src={videoSrc} className="w-full h-full object-cover" controls autoPlay playsInline loop />
@@ -194,10 +179,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         {status === 1 ? (
                            <div className="flex flex-col items-center gap-4">
                              <div className="w-12 h-12 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
-                             <div className="flex flex-col items-center">
-                               <span className="text-white font-black text-xl leading-none">{progress}%</span>
-                               <span className="text-[8px] font-bold text-cyan-400 uppercase tracking-widest mt-1 animate-pulse">Rendering</span>
-                             </div>
+                             <span className="text-white font-black text-xl leading-none">{progress}%</span>
                            </div>
                         ) : (
                           <svg className="w-12 h-12 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -220,50 +202,24 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         </div>
                       </button>
                     )}
-
-                    <div className="absolute top-4 right-4 flex gap-2">
-                       {status === 1 && (
-                         <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-500 text-[8px] font-black uppercase tracking-widest border border-amber-500/20 animate-pulse">
-                           Progress {progress}%
-                         </span>
-                       )}
-                       {status === 3 && (
-                         <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-500 text-[8px] font-black uppercase tracking-widest border border-rose-500/20">Error</span>
-                       )}
-                       <span className="px-3 py-1 rounded-full bg-slate-950/80 text-white text-[8px] font-black uppercase tracking-widest border border-white/10 backdrop-blur-md">
-                         {item.model_name || 'AI CORE'}
-                       </span>
-                    </div>
                   </div>
 
-                  {/* Metadata Content */}
                   <div className="p-6 flex-1 flex flex-col">
                     <div className="flex justify-between items-start mb-4">
                       <div className="font-mono text-[9px] text-slate-500 tracking-tighter uppercase">{item.uuid.substring(0, 8)}...</div>
                       <div className="text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleDateString()}</div>
                     </div>
-                    
                     <p className="text-slate-300 text-xs font-medium leading-relaxed line-clamp-3 mb-6 flex-1 italic">
                       "{item.input_text || 'Tiada prompt.'}"
                     </p>
-
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-1.5 h-1.5 rounded-full ${status === 2 ? 'bg-cyan-500' : status === 1 ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'}`}></div>
-                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
-                      </div>
-                      
+                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
                       <button 
                         onClick={() => handleDownload(item)}
                         disabled={processing || status !== 2}
                         className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-20"
-                        title="Download MP4"
                       >
-                        {processing ? (
-                          <div className="w-4 h-4 border-2 border-slate-700 border-t-cyan-500 rounded-full animate-spin"></div>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        )}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       </button>
                     </div>
                   </div>
