@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, getProxiedMediaUrl, fetchVideoAsBlob } from '../services/geminiService';
+import { getAllHistory, getSpecificHistory, fetchVideoAsBlob, getProxiedMediaUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
 
 interface HistoryViewProps {
@@ -52,23 +52,22 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // Broad capture of all Sora 2.0 and Video tasks
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
-          const processing = Number(item.status) === 1;
-          return processing || type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
+          const status1 = Number(item.status) === 1;
+          return status1 || type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
         });
         
         setHistory(filteredItems);
 
-        // SYNC MECHANISM: Auto-poll aggressively if any video is "BAKING" (Status 1)
+        // SYNC: Poll aggressively if any video is BAKING (Status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          // Poll every 2 seconds for a high-sync experience
+          // Poll every 2 seconds for high-fidelity updates
           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
         }
       } else {
@@ -85,10 +84,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Safety periodic sync every 20 seconds regardless of status
+    // Safety sync every 20s
     const backgroundInterval = setInterval(() => fetchHistory(false), 20000);
     
-    // LISTEN for signals from the Studio View
+    // LISTEN for signals from Studio
     const handleSync = () => fetchHistory(false);
     window.addEventListener('sync_vault_signal', handleSync);
     
@@ -149,10 +148,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
           window.URL.revokeObjectURL(blobUrl);
         }, 100);
       } else {
-        alert("Video belum tersedia untuk dimuat turun.");
+        alert("Video belum sedia.");
       }
     } catch (e: any) {
-      alert(`Ralat muat turun. Sila cuba lagi sekejap lagi.`);
+      alert(`Ralat muat turun.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -223,7 +222,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         ) : item.thumbnail_url ? (
                           <img src={getProxiedMediaUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                         ) : (
-                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
                         )}
                       </div>
                     )}
@@ -243,14 +242,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       <div className="text-[8px] md:text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleDateString()}</div>
                     </div>
                     <p className="text-slate-300 text-[10px] md:text-xs font-medium leading-relaxed line-clamp-3 mb-5 md:mb-6 flex-1 italic">
-                      "{item.input_text || 'Tiada prompt direkodkan.'}"
+                      "{item.input_text || 'Tiada prompt.'}"
                     </p>
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-[8px] md:text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
                         <span className="text-[7px] text-slate-700 font-bold uppercase">{item.model_name}</span>
                       </div>
-                      <button onClick={() => handleDownload(item)} disabled={processing || status !== 2} className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all shadow-sm">
+                      <button onClick={() => handleDownload(item)} disabled={processing || status !== 2} className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all">
                          <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       </button>
                     </div>

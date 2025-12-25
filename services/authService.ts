@@ -6,7 +6,7 @@ const SESSION_KEY = 'azmeer_studio_session';
 
 export const loginLocal = async (userId: string, password: string): Promise<UserProfile> => {
   const { data, error } = await supabase
-    .from('user_profiles')
+    .from('profiles')
     .select('*')
     .eq('username', userId)
     .eq('password', password)
@@ -22,7 +22,7 @@ export const loginLocal = async (userId: string, password: string): Promise<User
 
 export const signupLocal = async (userId: string, email: string, password: string, phone: string): Promise<UserProfile> => {
   const { data: existing } = await supabase
-    .from('user_profiles')
+    .from('profiles')
     .select('id')
     .eq('username', userId)
     .single();
@@ -32,6 +32,7 @@ export const signupLocal = async (userId: string, email: string, password: strin
   }
 
   const newUser = {
+    id: `u-${Math.random().toString(36).substr(2, 9)}`,
     username: userId,
     email,
     password,
@@ -45,7 +46,7 @@ export const signupLocal = async (userId: string, email: string, password: strin
   };
 
   const { data, error } = await supabase
-    .from('user_profiles')
+    .from('profiles')
     .insert(newUser)
     .select()
     .single();
@@ -61,14 +62,12 @@ export const logoutLocal = () => {
 export const getCurrentSession = (): UserProfile | null => {
   const session = localStorage.getItem(SESSION_KEY);
   if (!session) return null;
-  // Note: We parse the session, but it might be stale. 
-  // Components should call getProfile(profile.id) for the absolute truth.
   return JSON.parse(session);
 };
 
 export const getProfile = async (userId: string): Promise<UserProfile | null> => {
   const { data } = await supabase
-    .from('user_profiles')
+    .from('profiles')
     .select('*')
     .eq('id', userId)
     .single();
@@ -79,16 +78,15 @@ export const updateUsage = async (userId: string, type: 'video' | 'image') => {
   const current = await getProfile(userId);
   if (!current) return;
 
-  // Master admins ignore usage tracking if they want, but we keep logs.
-  // We only increment if they aren't unlimited (admin).
+  // ADMIN BYPASS: Never increment usage count for admins to keep them unlimited
   if (current.is_admin) return;
 
   const updates = type === 'video' 
-    ? { videos_used: current.videos_used + 1 }
-    : { images_used: current.images_used + 1 };
+    ? { videos_used: (current.videos_used || 0) + 1 }
+    : { images_used: (current.images_used || 0) + 1 };
 
   const { data } = await supabase
-    .from('user_profiles')
+    .from('profiles')
     .update(updates)
     .eq('id', userId)
     .select()
@@ -103,28 +101,27 @@ export const canGenerate = async (userId: string, type: 'video' | 'image'): Prom
   const user = await getProfile(userId);
   if (!user) return false;
   
-  // FIX: Master Admin has unlimited power.
+  // ADMIN BYPASS: Admins are ALWAYS allowed to generate regardless of used/limit
   if (user.is_admin) return true;
   
-  // Normal users must be approved.
+  // Normal users must be approved and within limits
   if (!user.is_approved) return false;
   
-  if (type === 'video') return user.videos_used < user.video_limit;
-  return user.images_used < user.image_limit;
+  if (type === 'video') return (user.videos_used || 0) < (user.video_limit || 0);
+  return (user.images_used || 0) < (user.image_limit || 0);
 };
 
 export const getAllProfiles = async (): Promise<UserProfile[]> => {
   const { data } = await supabase
-    .from('user_profiles')
+    .from('profiles')
     .select('*')
     .order('created_at', { ascending: false });
   return (data as UserProfile[]) || [];
 };
 
 export const updateProfileAdmin = async (userId: string, updates: Partial<UserProfile>) => {
-  const { data } = await supabase.from('user_profiles').update(updates).eq('id', userId).select().single();
+  const { data } = await supabase.from('profiles').update(updates).eq('id', userId).select().single();
   
-  // Sync the local session if the logged-in user was updated
   const session = getCurrentSession();
   if (session && session.id === userId && data) {
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));
@@ -132,5 +129,5 @@ export const updateProfileAdmin = async (userId: string, updates: Partial<UserPr
 };
 
 export const deleteProfileAdmin = async (userId: string) => {
-  await supabase.from('user_profiles').delete().eq('id', userId);
+  await supabase.from('profiles').delete().eq('id', userId);
 };

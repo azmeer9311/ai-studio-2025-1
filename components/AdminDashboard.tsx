@@ -28,7 +28,6 @@ const AdminDashboard: React.FC = () => {
     if (isNaN(numValue)) return;
     try {
       await updateProfileAdmin(userId, { [field]: numValue });
-      // Refresh local state to avoid full re-fetch
       setProfiles(prev => prev.map(p => p.id === userId ? { ...p, [field]: numValue } : p));
     } catch (e) {
       alert("Gagal update limit.");
@@ -117,10 +116,10 @@ const AdminDashboard: React.FC = () => {
                     {!profile.is_admin && (
                       profile.is_approved ? (
                         <button 
-                          onClick={() => handleDeleteUser(profile.id)}
+                          onClick={() => handleAction(profile.id, { is_approved: false })}
                           className="px-4 py-2 bg-rose-500/10 text-rose-500 text-[8px] font-black uppercase tracking-widest rounded-xl hover:bg-rose-500 hover:text-white transition-all"
                         >
-                          Reject & Delete
+                          Suspend
                         </button>
                       ) : (
                         <div className="flex items-center justify-end gap-2">
@@ -159,14 +158,14 @@ const AdminDashboard: React.FC = () => {
               Admin <span className="text-cyan-500">Dashboard</span>
             </h2>
             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-              Monitor Usage & Urus Kelulusan Pengguna
+              Monitor Usage & Urus Kelulusan Pengguna (REAL DB)
             </p>
           </div>
           <button 
             onClick={fetchProfiles}
             className="px-6 py-3 bg-slate-900 border border-slate-800 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-white transition-all"
           >
-            Refresh Vault
+            Sync All Users
           </button>
         </header>
 
@@ -180,12 +179,6 @@ const AdminDashboard: React.FC = () => {
             {renderUserTable(approvedProfiles, "Approved Users", "text-cyan-500")}
           </>
         )}
-
-        <footer className="mt-12 p-8 border-t border-slate-900/50 text-center">
-          <p className="text-[9px] text-slate-600 font-bold uppercase tracking-[0.3em] max-w-lg mx-auto leading-relaxed">
-            Admin System Secured. Monitor video user secara real-time melalui lajur "Used".
-          </p>
-        </footer>
       </div>
     </div>
   );
