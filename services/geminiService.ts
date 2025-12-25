@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { canGenerate, updateUsage } from "./authService";
 
@@ -8,21 +9,25 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menambah api_key ke dalam URL untuk media (video/image/audio).
+ * Penting untuk elemen <video> dan <img> supaya tidak disekat CORS atau ralat 401.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
+  // Jika URL adalah path relatif, tambah domain CDN
   if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
     cleanUrl = `${GEMINIGEN_CDN_URL}${path}`;
   }
   
+  // Buang double slashes (kecuali protocol)
   cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, "$1");
 
   try {
     const urlObj = new URL(cleanUrl);
     urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
+    // Tambah cache-buster untuk mengelakkan ralat media stale
     urlObj.searchParams.set('_t', Date.now().toString());
     return urlObj.toString();
   } catch (e) {
@@ -33,72 +38,59 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 
 /**
  * Fungsi fetch yang sangat tahan lasak untuk memintas ralat 'Failed to fetch' (CORS).
+ * Menggunakan Proxy untuk semua request API JSON.
  */
 async function robustFetch(url: string, options: RequestInit = {}) {
-  const isGet = !options.method || options.method === 'GET';
+  // Gunakan Proxy CORS untuk semua request API ke domain geminigen
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
   
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
   
+  const isGet = !options.method || options.method === 'GET';
   if (!isGet && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // 1. Cuba Direct Fetch dahulu
   try {
-    const response = await fetch(url, { ...options, headers });
-    if (response.ok) return response;
-  } catch (e) {}
-
-  // 2. Cuba CorsProxy.io (Paling transparent)
-  try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl, { ...options, headers });
-    if (response.ok) return response;
-  } catch (e) {}
-
-  // 3. Cuba AllOrigins Proxy (Hanya untuk GET/Sync)
-  if (isGet) {
-    try {
-      const aoUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
-      const response = await fetch(aoUrl);
-      if (response.ok) {
-        const data = await response.json();
-        const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
-        return {
-          ok: true,
-          status: 200,
-          json: async () => contents
-        } as Response;
-      }
-    } catch (e) {}
+    const response = await fetch(proxyUrl, {
+      ...options,
+      headers
+    });
+    
+    if (!response.ok) {
+      // Jika proxy gagal, cuba direct sebagai fallback (untuk dev environment tertentu)
+      console.warn("Proxy failed, trying direct fetch...");
+      const directResponse = await fetch(url, { ...options, headers });
+      return directResponse;
+    }
+    
+    return response;
+  } catch (err) {
+    // Jika masih gagal, lempar ralat yang bermakna
+    throw new Error("Rangkaian disekat (CORS). Sila pastikan sambungan internet stabil.");
   }
-
-  throw new Error("Talian AI sibuk atau ralat rangkaian. Sila cuba sebentar lagi.");
 }
 
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const targetUrl = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
   const response = await robustFetch(targetUrl, options);
-  if (response && typeof response.json === 'function') {
-    return await response.json();
-  }
-  return response;
+  if (!response.ok) throw new Error(`Ralat API: ${response.status}`);
+  return await response.json();
 }
 
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
-  if (url.startsWith('blob:')) return url;
+  // Untuk video, kita guna URL ber-autentikasi terus dalam tag <video src>
   return prepareAuthenticatedUrl(url);
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
   try {
-    // Ditambah _t untuk cache busting supaya history auto sync dengan GeminiGen
     const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&_t=${Date.now()}`;
     return await fetchApi(endpoint);
   } catch (e) {
-    console.warn("Vault retrieval issue:", e);
+    console.error("Vault retrieval issue:", e);
     return { result: [], success: false };
   }
 };
@@ -244,8 +236,8 @@ export const checkVideoStatus = async (operation: any) => {
 };
 
 export const fetchVideoContent = async (uri: string) => {
-  const finalUri = `${uri}&key=${process.env.API_KEY}`;
-  const response = await fetch(finalUri);
+  const response = await fetch(`${uri}&key=${process.env.API_KEY}`);
+  if (!response.ok) throw new Error("Gagal memuat turun video.");
   const blob = await response.blob();
   return URL.createObjectURL(blob);
 };

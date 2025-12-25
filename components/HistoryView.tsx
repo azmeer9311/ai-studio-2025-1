@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllHistory, getSpecificHistory, fetchVideoAsBlob, prepareAuthenticatedUrl } from '../services/geminiService';
+import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
 
 interface HistoryViewProps {
@@ -16,13 +16,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const pollingTimerRef = useRef<number | null>(null);
 
   /**
-   * Fungsi Pencarian URL Video (Dikuatkan)
-   * Mengimbas secara agresif dalam semua medan yang mungkin dipulangkan oleh GeminiGen API.
+   * Fungsi Pencarian URL Video (Deep Resolution)
+   * Mengimbas generated_video array, generate_result string, dan top-level fields.
    */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
     
-    // 1. Periksa array generated_video (Standard format)
+    // 1. Periksa array generated_video (Format paling standard dari GeminiGen)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       for (const vid of item.generated_video) {
         const url = vid.video_url || vid.video_uri || vid.video_path || '';
@@ -30,30 +30,30 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
     }
 
-    // 2. Periksa medan generate_result (Seringkali JSON string atau URL mentah)
+    // 2. Periksa medan generate_result (Boleh jadi JSON string atau URL mentah)
     if (item.generate_result) {
-      if (typeof item.generate_result === 'string') {
-        if (item.generate_result.startsWith('http')) return item.generate_result;
+      const res = item.generate_result;
+      if (typeof res === 'string') {
+        if (res.startsWith('http')) return res;
         try {
-          const parsed = JSON.parse(item.generate_result);
-          // Cuba cari dalam array
+          const parsed = JSON.parse(res);
+          // Jika array (contoh: [{video_url: '...'}])
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const first = parsed[0];
-            return first.video_url || first.video_uri || first.video_path || first.url || '';
+            return parsed[0].video_url || parsed[0].video_uri || parsed[0].url || '';
           }
-          // Cuba cari dalam object
-          return parsed.video_url || parsed.video_uri || parsed.video_path || parsed.url || '';
+          // Jika object
+          return parsed.video_url || parsed.video_uri || parsed.url || '';
         } catch (e) {
-          // Jika bukan JSON tapi ada rupa URL
-          if (item.generate_result.includes('.mp4')) return item.generate_result;
+          // Jika string bukan JSON tapi mengandungi path
+          if (res.includes('.mp4') || res.includes('.mov')) return res;
         }
-      } else if (typeof item.generate_result === 'object') {
-         return item.generate_result.video_url || item.generate_result.video_uri || item.generate_result.url || '';
+      } else if (typeof res === 'object') {
+        return res.video_url || res.video_uri || res.url || '';
       }
     }
 
-    // 3. Periksa top-level fields yang mungkin wujud
-    return item.video_uri || item.video_url || item.url || '';
+    // 3. Backup: Top level fields
+    return item.video_url || item.video_uri || item.url || '';
   };
 
   const fetchHistory = useCallback(async (showLoading = true) => {
@@ -67,6 +67,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
+        // Filter untuk tunjuk video berkaitan Sora/Veo sahaja
         const filteredItems = items.filter((item: any) => {
           const typeStr = (item.type || '').toLowerCase();
           const modelStr = (item.model_name || '').toLowerCase();
@@ -78,7 +79,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
-        // SYNC AGGRESIF (4S) untuk video yang berstatus 'Processing' (1)
+        // SYNC AGGRESIF (4S) jika ada video sedang 'Processing' (Status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
@@ -98,10 +99,9 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     fetchHistory(true);
-    // Auto sync setiap 12 saat untuk memastikan status video sentiasa dikemaskini
-    const globalSync = setInterval(() => fetchHistory(false), 12000);
+    // Auto sync global setiap 15 saat
+    const globalSync = setInterval(() => fetchHistory(false), 15000);
     return () => {
-      // Perbaiki ralat pollingRef -> pollingTimerRef
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(globalSync);
     };
@@ -115,12 +115,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
       
-      // Jika URL tak ada dalam data list, cuba ambil dari endpoint specific history
+      // Jika data list tak lengkap, tarik dari detail API
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
-        // Kemaskini local state supaya URL tak hilang bila refresh
+        
+        // Simpan data detail ke dalam state history untuk rujukan masa depan
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
@@ -128,10 +129,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const finalUrl = prepareAuthenticatedUrl(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: finalUrl }));
       } else {
-        throw new Error("Pautan video belum sedia atau tiada di server.");
+        throw new Error("Video belum sedia atau tiada pautan ditemui.");
       }
     } catch (e: any) {
-      alert(`Gagal Preview: ${e.message}`);
+      alert(`Preview Gagal: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -144,20 +145,22 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       let url = resolveVideoUrl(item);
       if (!url) {
         const details = await getSpecificHistory(uuid);
-        url = resolveVideoUrl(details?.data || details?.result || details);
+        const detailData = details?.data || details?.result || details;
+        url = resolveVideoUrl(detailData);
       }
+      
       if (url) {
         const finalUrl = prepareAuthenticatedUrl(url);
-        // Buka pautan dalam tab baru dengan API Key untuk muat turun terus
+        // Gunakan anchor tag untuk trigger download terus
         const link = document.createElement('a');
         link.href = finalUrl;
         link.target = '_blank';
-        link.download = `azmeer-ai-video-${uuid.substring(0, 8)}.mp4`;
+        link.download = `Sora_Video_${uuid.substring(0, 8)}.mp4`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       } else {
-        alert("Video belum sedia untuk dimuat turun.");
+        alert("Pautan muat turun tidak dijumpai.");
       }
     } catch (e: any) {
       alert(`Ralat muat turun. Sila cuba lagi.`);
@@ -192,14 +195,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         </header>
 
         {error && (
-          <div className="mb-8 p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-500 flex flex-col items-center gap-3 text-center">
+          <div className="mb-8 p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-500 text-center">
             <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
           </div>
         )}
 
         {history.length === 0 && !loading && !error ? (
-          <div className="text-center py-20 md:py-40 border-2 border-dashed border-slate-900 rounded-[2rem] md:rounded-[3rem] bg-slate-900/10 px-6">
-            <p className="text-slate-600 font-bold uppercase tracking-widest text-[10px] md:text-xs">Tiada rekod penjanaan video dijumpai.</p>
+          <div className="text-center py-20 md:py-40 border-2 border-dashed border-slate-900 rounded-[2rem] md:rounded-[3rem] bg-slate-900/10">
+            <p className="text-slate-600 font-bold uppercase tracking-widest text-[10px] md:text-xs">Tiada rekod video ditemui.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8 pb-32">
@@ -225,7 +228,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       <img 
                         src={prepareAuthenticatedUrl(item.thumbnail_url)} 
                         className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" 
-                        alt="Preview Thumbnail" 
+                        alt="Thumbnail" 
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950">
