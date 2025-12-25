@@ -8,13 +8,19 @@ const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
- * Menambah 'key' ke dalam URL untuk media (video/image/audio).
- * Penting: Menggunakan 'key' mengikut dokumentasi rasmi GeminiGen.
+ * Menambah 'key' ke dalam URL untuk media.
+ * PENTING: Mengesan Signed S3 URLs untuk mengelakkan ralat Signature Mismatch.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
+  // Jika URL sudah ada tandatangan S3 (Cloudflare R2), jangan ubah apa-apa.
+  // Menambah parameter pada signed URL akan merosakkan signature tersebut.
+  if (cleanUrl.includes('X-Amz-Signature') || cleanUrl.includes('X-Amz-Algorithm')) {
+    return cleanUrl;
+  }
+
   // Jika URL adalah path relatif, tambah domain CDN
   if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
@@ -25,20 +31,27 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 
   try {
     const urlObj = new URL(cleanUrl);
-    urlObj.searchParams.set('key', GEMINIGEN_KEY);
+    // Hanya tambah key jika bukan signed URL dan key belum ada
+    if (!urlObj.searchParams.has('key')) {
+      urlObj.searchParams.set('key', GEMINIGEN_KEY);
+    }
     return urlObj.toString();
   } catch (e) {
-    const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}`;
+    if (!cleanUrl.includes('key=')) {
+      const sep = cleanUrl.includes('?') ? '&' : '?';
+      return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}`;
+    }
+    return cleanUrl;
   }
 };
 
 /**
- * Menghasilkan URL yang diproksi untuk memintas ralat CORS pada elemen <video> dan <img>.
+ * Menghasilkan URL yang diproksi untuk memintas ralat CORS.
  */
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
   const authUrl = prepareAuthenticatedUrl(url);
+  // Menggunakan proxy untuk memintas sekatan CORS browser
   return `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
 };
 
@@ -76,7 +89,8 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
 }
 
 /**
- * Memuatkan video sebagai Blob (Fallback jika penstriman terus gagal).
+ * Memuatkan video sebagai Blob melalui proxy.
+ * Ini adalah cara paling stabil untuk memainkan dan memuat turun video yang ada ralat CORS.
  */
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
@@ -85,10 +99,11 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
     const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error("Gagal memuat turun data media.");
+    if (!response.ok) throw new Error("Gagal memuat turun data media dari server.");
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
+    console.warn("Ralat fetch Blob, guna URL asal:", e);
     return authUrl;
   }
 };

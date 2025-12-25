@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, getProxiedMediaUrl } from '../services/geminiService';
+import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, getProxiedMediaUrl, fetchVideoAsBlob } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
 
 interface HistoryViewProps {
@@ -17,7 +17,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   /**
    * Fungsi Pencarian URL Video (Deep Resolution)
-   * Mencari URL video dalam struktur data API yang mungkin berbeza.
    */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
@@ -28,7 +27,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       return v.video_url || v.video_uri || v.url || '';
     }
 
-    // 2. Periksa medan generate_result (Boleh jadi URL terus atau string JSON)
+    // 2. Periksa medan generate_result
     if (item.generate_result) {
       const res = item.generate_result;
       if (typeof res === 'string') {
@@ -112,9 +111,9 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
 
       if (url) {
-        // Guna pautan proksi terus untuk penstriman yang lancar tanpa ralat CORS
-        const proxiedUrl = getProxiedMediaUrl(url);
-        setActiveVideo(prev => ({ ...prev, [uuid]: proxiedUrl }));
+        // MUDAH & STABIL: Tukar URL server kepada Blob URL tempatan untuk memintas ralat CORS 100%
+        const blobUrl = await fetchVideoAsBlob(url);
+        setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
         throw new Error("Pautan video tidak ditemui.");
       }
@@ -136,9 +135,21 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
       
       if (url) {
-        const finalUrl = prepareAuthenticatedUrl(url);
-        // Membuka pautan terus di tab baru supaya pelayar boleh mengendalikan muat turun fail .mp4
-        window.open(finalUrl, '_blank');
+        // STRATEGI BARU: Download fail sebagai blob dahulu untuk memintas CORS
+        const blobUrl = await fetchVideoAsBlob(url);
+        
+        // Cipta link muat turun maya
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', `SoraVideo_${uuid.substring(0, 8)}.mp4`);
+        document.body.appendChild(link);
+        link.click();
+        
+        // Bersihkan semula
+        setTimeout(() => {
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(blobUrl);
+        }, 100);
       } else {
         alert("Video belum tersedia untuk dimuat turun.");
       }
@@ -262,10 +273,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       <button 
                         onClick={() => handleDownload(item)}
                         disabled={processing || status !== 2}
-                        className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-20"
+                        className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-20 flex items-center justify-center"
                         title="Download MP4"
                       >
-                        <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        {processing ? (
+                          <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        )}
                       </button>
                     </div>
                   </div>
