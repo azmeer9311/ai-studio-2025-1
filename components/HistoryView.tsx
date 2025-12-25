@@ -58,9 +58,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
           const isSoraVideo = type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
-          const isProcessing = Number(item.status) === 1;
-          const isCompleted = Number(item.status) === 2;
-          return isProcessing || isSoraVideo || isCompleted;
+          const statusVal = Number(item.status);
+          const isProcessing = statusVal === 1;
+          const isCompleted = statusVal === 2;
+          const isFailed = statusVal === 3;
+          return isProcessing || isSoraVideo || isCompleted || isFailed;
         });
         
         setHistory(filteredItems);
@@ -88,8 +90,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Safety sync every 15s to catch external updates from geminigen.ai
-    const backgroundInterval = setInterval(() => fetchHistory(false), 15000);
+    // Safety sync every 10s to catch external updates from geminigen.ai
+    const backgroundInterval = setInterval(() => fetchHistory(false), 10000);
     
     // LISTEN for signals from SoraStudioView when polling occurs there
     const handleSync = () => fetchHistory(false);

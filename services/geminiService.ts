@@ -8,7 +8,7 @@ const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
- * Menambah 'key' ke dalam URL untuk media.
+ * Menambah 'key' dan cache-buster ke dalam URL untuk media.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
@@ -30,13 +30,12 @@ export const prepareAuthenticatedUrl = (url: string): string => {
     if (!urlObj.searchParams.has('key')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
+    // Add cache buster to media URLs too
+    urlObj.searchParams.set('_cb', Date.now().toString());
     return urlObj.toString();
   } catch (e) {
-    if (!cleanUrl.includes('key=')) {
-      const sep = cleanUrl.includes('?') ? '&' : '?';
-      return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}`;
-    }
-    return cleanUrl;
+    const sep = cleanUrl.includes('?') ? '&' : '?';
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_cb=${Date.now()}`;
   }
 };
 
@@ -47,7 +46,10 @@ export const getProxiedMediaUrl = (url: string): string => {
 };
 
 async function robustFetch(url: string, options: RequestInit = {}) {
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  // CRITICAL: Add cache-buster to the base URL BEFORE proxying to ensure we hit geminigen.ai fresh
+  const separator = url.includes('?') ? '&' : '?';
+  const timestampedUrl = `${url}${separator}t=${Date.now()}`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(timestampedUrl)}`;
   
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
@@ -57,16 +59,14 @@ async function robustFetch(url: string, options: RequestInit = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(proxyUrl, {
-    ...options,
-    headers
-  });
-
-  if (!response.ok) {
-    return await fetch(url, { ...options, headers });
+  try {
+    const response = await fetch(proxyUrl, { ...options, headers });
+    if (!response.ok) throw new Error("Proxy error");
+    return response;
+  } catch (e) {
+    // Fallback if proxy fails
+    return await fetch(timestampedUrl, { ...options, headers });
   }
-
-  return response;
 }
 
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
