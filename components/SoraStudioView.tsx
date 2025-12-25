@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 import { generateUGCPrompt } from '../services/openaiService';
@@ -30,7 +29,6 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   const pollingRef = useRef<number | null>(null);
   const logoUrl = "https://i.ibb.co/xqgH2MQ4/Untitled-design-18.png";
 
-  // LOGIC LOCK: Admin sentiasa boleh guna. User biasa kena approved DAN ada limit > 0.
   const isLocked = !userProfile.is_admin && (!userProfile.is_approved || userProfile.video_limit <= 0);
 
   useEffect(() => {
@@ -147,7 +145,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             UGC <span className="text-cyan-500">STUDIO</span>
           </h2>
           <p className="text-slate-500 max-w-lg text-sm font-medium leading-relaxed">
-            Hampa taip je info produk, biar AI kami jana prompt video 15 saat gaya influencer.
+            Pilih tempoh dan nisbah video hampa kat bawah ni, pastu taip je prompt produk.
           </p>
         </header>
 
@@ -165,63 +163,58 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             {/* UGC Wizard Interface */}
             <div className="bg-slate-900/40 border border-slate-800 rounded-[2.5rem] p-6 space-y-5">
               <div className="flex items-center justify-between">
-                 <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI UGC Wizard</h3>
-                 <div className="flex items-center gap-2">
-                   <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
-                   <span className="text-[8px] font-bold text-slate-500 uppercase">AI Core Active</span>
-                 </div>
+                 <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI Video Config</h3>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Karakter</label>
-                  <select 
-                    value={wizardGender}
-                    onChange={(e) => setWizardGender(e.target.value as any)}
-                    disabled={isLocked}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-xs text-white outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
-                  >
-                    <option value="perempuan">Wanita (Tudung)</option>
-                    <option value="lelaki">Lelaki (Influencer)</option>
-                  </select>
+                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Tempoh (Duration)</label>
+                  <div className="flex gap-2">
+                    {[10, 15].map(d => (
+                      <button 
+                        key={d}
+                        onClick={() => setDuration(d as any)}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black transition-all border ${duration === d ? 'bg-cyan-500/10 border-cyan-500 text-cyan-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}
+                      >
+                        {d}S
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Platform</label>
-                  <select 
-                    value={wizardPlatform}
-                    onChange={(e) => setWizardPlatform(e.target.value as any)}
-                    disabled={isLocked}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-xs text-white outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
-                  >
-                    <option value="tiktok">TikTok Ad</option>
-                    <option value="facebook">Facebook Ad</option>
-                  </select>
+                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Nisbah (Ratio)</label>
+                  <div className="flex gap-2">
+                    {['portrait', 'landscape'].map(r => (
+                      <button 
+                        key={r}
+                        onClick={() => setAspectRatio(r as any)}
+                        className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase transition-all border ${aspectRatio === r ? 'bg-cyan-500/10 border-cyan-500 text-cyan-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}
+                      >
+                        {r === 'portrait' ? '9:16' : '16:9'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               <button 
                 onClick={handleMagicGenerate}
                 disabled={isLocked || isWizardLoading || isGenerating}
-                className="w-full py-4 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95"
+                className="w-full py-4 bg-slate-950 border border-slate-800 hover:border-cyan-500/30 text-slate-500 hover:text-cyan-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3"
               >
-                {isWizardLoading ? (
-                  <div className="w-4 h-4 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-                ) : (
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" /></svg>
-                )}
-                Jana Prompt UGC Pro
+                {isWizardLoading ? <div className="w-4 h-4 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div> : <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" /></svg>}
+                Generate UGC Prompt
               </button>
             </div>
 
-            {/* Main Prompt Area */}
             <div className="bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800/50 p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative">
               <div className="space-y-6">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Upload Gambar (Optional)</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Rujukan Gambar (Optional)</label>
                   {!filePreview ? (
                     <div onClick={() => !isLocked && fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all">
                       <svg className="w-8 h-8 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      <span className="text-[9px] font-bold text-slate-600 uppercase">Guna sebagai rujukan</span>
+                      <span className="text-[9px] font-bold text-slate-600 uppercase">Klik untuk upload</span>
                     </div>
                   ) : (
                     <div className="relative rounded-2xl overflow-hidden aspect-video border border-slate-800">
@@ -233,25 +226,14 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Video Prompt & Script</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Video Prompt</label>
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     disabled={isLocked}
-                    placeholder="Contoh: 'Pencuci muka organik untuk kulit berminyak'..."
+                    placeholder="Contoh: 'Cinematic shot of a car driving through Kuala Lumpur at night'..."
                     className="w-full h-44 bg-slate-950/80 border border-slate-800 rounded-2xl p-5 text-xs text-slate-200 outline-none focus:border-cyan-500/50 transition-all resize-none custom-scrollbar font-medium leading-relaxed"
                   />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 text-center">
-                   <div className="text-[8px] font-black text-slate-600 uppercase mb-1">Duration</div>
-                   <div className="text-xs font-black text-white">{duration}S</div>
-                </div>
-                <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 text-center">
-                   <div className="text-[8px] font-black text-slate-600 uppercase mb-1">Ratio</div>
-                   <div className="text-xs font-black text-white">{aspectRatio === 'portrait' ? '9:16' : '16:9'}</div>
                 </div>
               </div>
 
@@ -263,10 +245,10 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                 {isGenerating ? (
                   <>
                     <div className="w-4 h-4 border-4 border-slate-950/20 border-t-slate-950 rounded-full animate-spin"></div>
-                    <span>Rendering {progress}%</span>
+                    <span>Processing {progress}%</span>
                   </>
                 ) : (
-                  <span>Synthesize UGC Video</span>
+                  <span>Mula Jana Video</span>
                 )}
               </button>
             </div>
@@ -282,14 +264,14 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                     <div className="w-24 h-24 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
                     <div className="absolute inset-0 flex items-center justify-center text-white font-black text-lg">{progress}%</div>
                   </div>
-                  <p className="text-cyan-500 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Encoding Scene Transitions</p>
+                  <p className="text-cyan-500 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Synthesizing Frames</p>
                 </div>
               ) : (
                 <div className="text-center p-12 opacity-20 group">
                    <div className="w-16 h-16 mx-auto mb-4 border-2 border-dashed border-slate-700 rounded-full flex items-center justify-center group-hover:border-cyan-500/50 transition-all">
                       <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                    </div>
-                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Preview Output</p>
+                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pratonton Video</p>
                 </div>
               )}
             </div>
@@ -297,8 +279,8 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             {renderedVideoUrl && (
               <div className="mt-8 flex justify-center">
                 <button onClick={() => onViewChange?.(AppView.HISTORY)} className="px-10 py-4 rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 text-[9px] font-black uppercase tracking-widest hover:text-white transition-all flex items-center gap-3">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-                  Simpan Dalam Vault
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Tengok Rekod Vault
                 </button>
               </div>
             )}

@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { canGenerate, updateUsage } from "./authService";
 
@@ -41,33 +40,29 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
   
+  // Jangan set Content-Type jika FormData (biar browser set boundary secara automatik)
   if (!isGet && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // Helper for direct fetch
-  const directFetch = async (targetUrl: string) => {
-    return await fetch(targetUrl, { ...options, headers });
-  };
-
   // 1. Cuba Direct Fetch dahulu
   try {
-    const response = await directFetch(url);
+    const response = await fetch(url, { ...options, headers });
     if (response.ok) return response;
   } catch (e) {
-    // Silent catch for CORS issues
+    // Silent catch
   }
 
-  // 2. Cuba CorsProxy.io (Paling transparent untuk POST/GET)
+  // 2. Cuba CorsProxy.io (Paling transparent)
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
     const response = await fetch(proxyUrl, { ...options, headers });
     if (response.ok) return response;
   } catch (e) {
-    // Continue to next fallback
+    // Silent catch
   }
 
-  // 3. Cuba AllOrigins Proxy (Hanya untuk GET/History)
+  // 3. Cuba AllOrigins Proxy (Hanya untuk GET/Sync)
   if (isGet) {
     try {
       const aoUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
@@ -81,12 +76,10 @@ async function robustFetch(url: string, options: RequestInit = {}) {
           json: async () => contents
         } as Response;
       }
-    } catch (e) {
-      // All fallback failed
-    }
+    } catch (e) {}
   }
 
-  throw new Error("Unable to connect to AI server. Please check your network or API limits.");
+  throw new Error("Talian AI sibuk atau ralat rangkaian. Sila cuba sebentar lagi.");
 }
 
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
