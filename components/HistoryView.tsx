@@ -17,10 +17,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
+    // Cuba ambil dari generated_video array (Standard GeminiGen API)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const vid = item.generated_video[0];
       return vid.video_url || vid.video_uri || '';
     }
+    // Cuba ambil dari generate_result
     if (item.generate_result) {
       if (typeof item.generate_result === 'string') {
         if (item.generate_result.startsWith('http')) return item.generate_result;
@@ -45,15 +47,21 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
+        // SYNC LOGIC: Kita ambil semua history yang berkaitan dengan Video/Sora
+        // Kita tidak lagi filter isMine menggunakan local ID kerana API menggunakan global ID.
         const filteredItems = items.filter((item: any) => {
-          const isVideo = item.type?.toLowerCase().includes('video') || 
-                          item.model_name?.toLowerCase().includes('sora');
-          const isMine = String(item.user_id) === String(userProfile.id);
-          return isVideo && isMine;
+          const typeStr = (item.type || '').toLowerCase();
+          const modelStr = (item.model_name || '').toLowerCase();
+          const isVideo = typeStr.includes('video') || 
+                          modelStr.includes('sora') || 
+                          modelStr.includes('veo') ||
+                          (item.generated_video && item.generated_video.length > 0);
+          return isVideo;
         });
         
         setHistory(filteredItems);
 
+        // Jika ada yang sedang diproses, teruskan polling
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         if (hasActiveTasks) {
@@ -68,7 +76,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [userProfile.id]);
+  }, []);
 
   useEffect(() => {
     fetchHistory(true);
@@ -88,6 +96,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
+        // Update local history item dengan details penuh
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
@@ -173,7 +182,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                     {videoSrc ? (
                       <video src={videoSrc} className="w-full h-full object-cover" controls autoPlay playsInline loop />
                     ) : item.thumbnail_url ? (
-                      <img src={item.thumbnail_url} className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
+                      <img src={prepareAuthenticatedUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950">
                         {status === 1 ? (
@@ -213,7 +222,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       "{item.input_text || 'Tiada prompt.'}"
                     </p>
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
+                        <span className="text-[7px] text-slate-700 font-bold uppercase">{item.model_name}</span>
+                      </div>
                       <button 
                         onClick={() => handleDownload(item)}
                         disabled={processing || status !== 2}

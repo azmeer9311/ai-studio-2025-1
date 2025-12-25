@@ -8,7 +8,7 @@ const GEMINIGEN_BASE_URL = 'https://api.geminigen.ai/uapi/v1';
 const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
- * Menambah api_key ke dalam URL. 
+ * Menambah api_key ke dalam URL untuk media (video/image/audio).
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
@@ -24,7 +24,6 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   try {
     const urlObj = new URL(cleanUrl);
     urlObj.searchParams.set('api_key', GEMINIGEN_KEY);
-    // Tambah t untuk elak cache
     urlObj.searchParams.set('_t', Date.now().toString());
     return urlObj.toString();
   } catch (e) {
@@ -34,51 +33,48 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 };
 
 /**
- * Fungsi fetch yang tahan lasak.
+ * Fungsi fetch utama untuk bypass CORS.
+ * AllOrigins digunakan secara default untuk GET bagi menjamin 'Sync' berjaya.
  */
 async function robustFetch(url: string, options: RequestInit = {}) {
-  const authUrl = prepareAuthenticatedUrl(url);
   const isGet = !options.method || options.method === 'GET';
+  
+  // Headers wajib
+  const headers = new Headers(options.headers || {});
+  headers.set('x-api-key', GEMINIGEN_KEY);
+  
+  if (!isGet && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
 
-  // Tier 1: Direct Fetch
-  try {
-    // UNTUK GET: JANGAN HANTAR SEBARANG HEADER (Elak 400 Bad Request & Preflight)
-    const fetchOptions: RequestInit = {
-      ...options,
-      headers: isGet ? {} : { 'Content-Type': 'application/json', ...options.headers }
-    };
-
-    const response = await fetch(authUrl, fetchOptions);
-    if (response.ok) return response;
-    
-    // Jika server response tapi bukan OK (e.g. 400)
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail?.message || errorData.message || `API Error: ${response.status}`);
-  } catch (e: any) {
-    // Jika ralat CORS atau Network dikesan
-    const isNetworkError = e.name === 'TypeError' || e.message?.includes('Failed to fetch') || e.message?.includes('blocked by CORS');
-
-    if (isNetworkError && isGet) {
-      console.warn("Direct fetch blocked. Attempting Proxy Fallback...");
-
-      // Tier 2: AllOrigins Proxy
-      try {
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(authUrl)}`;
-        const proxyResponse = await fetch(proxyUrl);
-        if (proxyResponse.ok) {
-          const data = await proxyResponse.json();
-          // AllOrigins pulangkan data dalam bentuk string di 'contents'
-          const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
-          
-          return {
-            ok: true,
-            json: async () => contents
-          } as Response;
-        }
-      } catch (proxyErr) {
-        console.error("Proxy fallback failed.");
+  // Gunakan Proxy AllOrigins untuk GET (Sync History)
+  if (isGet) {
+    try {
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
+      const response = await fetch(proxyUrl);
+      if (response.ok) {
+        const data = await response.json();
+        const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
+        return {
+          ok: true,
+          json: async () => contents
+        } as Response;
       }
+    } catch (e) {
+      console.error("Proxy failure:", e);
     }
+  }
+
+  // Untuk POST atau fallback
+  try {
+    const directResponse = await fetch(url, { ...options, headers });
+    if (directResponse.ok) return directResponse;
+    
+    // Fallback ke corsproxy.io jika direct gagal
+    const fallbackProxy = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    return await fetch(fallbackProxy, { ...options, headers });
+  } catch (e: any) {
+    console.error("Critical Connection Error:", e);
     throw e;
   }
 }
@@ -86,7 +82,6 @@ async function robustFetch(url: string, options: RequestInit = {}) {
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const targetUrl = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
   const response = await robustFetch(targetUrl, options);
-  // Jika response adalah object custom dari proxy, kita handle json()
   if (typeof response.json === 'function') {
     return await response.json();
   }
@@ -104,7 +99,7 @@ export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
     const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
     return await fetchApi(endpoint);
   } catch (e) {
-    console.error("Vault retrieval error:", e);
+    console.error("Vault sync failed:", e);
     return { result: [], success: false };
   }
 };
@@ -135,18 +130,10 @@ export const generateSoraVideo = async (params: {
   }
 
   const targetUrl = `${GEMINIGEN_BASE_URL}/video-gen/sora`;
-  const authUrl = prepareAuthenticatedUrl(targetUrl);
-  
-  // Untuk POST, kita biarkan browser handle boundary FormData
-  const response = await fetch(authUrl, {
+  const response = await robustFetch(targetUrl, {
     method: 'POST',
     body: formData
   });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || "Gagal menghantar permintaan sora.");
-  }
 
   const result = await response.json();
   await updateUsage(params.userId, 'video');
