@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { canGenerate, updateUsage } from "./authService";
 
@@ -40,7 +41,6 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
   
-  // Jangan set Content-Type jika FormData (biar browser set boundary secara automatik)
   if (!isGet && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
@@ -49,18 +49,14 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   try {
     const response = await fetch(url, { ...options, headers });
     if (response.ok) return response;
-  } catch (e) {
-    // Silent catch
-  }
+  } catch (e) {}
 
   // 2. Cuba CorsProxy.io (Paling transparent)
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
     const response = await fetch(proxyUrl, { ...options, headers });
     if (response.ok) return response;
-  } catch (e) {
-    // Silent catch
-  }
+  } catch (e) {}
 
   // 3. Cuba AllOrigins Proxy (Hanya untuk GET/Sync)
   if (isGet) {

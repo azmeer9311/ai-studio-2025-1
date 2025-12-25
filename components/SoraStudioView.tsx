@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 import { generateUGCPrompt } from '../services/openaiService';
@@ -125,7 +126,8 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       });
       setPrompt(ugcPrompt);
       setDuration(15);
-      setAspectRatio('portrait');
+      // Auto switch ratio based on platform for best results
+      if (wizardPlatform === 'tiktok') setAspectRatio('portrait');
     } catch (error: any) {
       alert("Gagal hubungi OpenAI: " + error.message);
     } finally {
@@ -163,7 +165,32 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             {/* UGC Wizard Interface */}
             <div className="bg-slate-900/40 border border-slate-800 rounded-[2.5rem] p-6 space-y-5">
               <div className="flex items-center justify-between">
-                 <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI Video Config</h3>
+                 <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI UGC Wizard</h3>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Watak (Character)</label>
+                  <select 
+                    value={wizardGender}
+                    onChange={(e) => setWizardGender(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-[10px] font-bold text-white uppercase outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="perempuan">Perempuan Melayu</option>
+                    <option value="lelaki">Lelaki Melayu</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Platform</label>
+                  <select 
+                    value={wizardPlatform}
+                    onChange={(e) => setWizardPlatform(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-[10px] font-bold text-white uppercase outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="tiktok">TikTok (Beg Kuning)</option>
+                    <option value="facebook">Facebook (Learn More)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -200,7 +227,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
               <button 
                 onClick={handleMagicGenerate}
                 disabled={isLocked || isWizardLoading || isGenerating}
-                className="w-full py-4 bg-slate-950 border border-slate-800 hover:border-cyan-500/30 text-slate-500 hover:text-cyan-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3"
+                className="w-full py-4 bg-slate-950 border border-slate-800 hover:border-cyan-500/30 text-slate-500 hover:text-cyan-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95"
               >
                 {isWizardLoading ? <div className="w-4 h-4 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div> : <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" /></svg>}
                 Generate UGC Prompt
@@ -240,7 +267,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
               <button
                 onClick={handleGenerate}
                 disabled={isLocked || isGenerating || !prompt.trim()}
-                className="w-full mt-8 bg-white text-slate-950 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95"
+                className="w-full mt-8 bg-white text-slate-950 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
               >
                 {isGenerating ? (
                   <>
