@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, fetchVideoAsBlob, getProxiedMediaUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
@@ -16,10 +17,9 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const pollingTimerRef = useRef<number | null>(null);
   const isPlayingRef = useRef<boolean>(false);
   
-  // PERSISTENCE ENGINE: Menghalang item dari "hilang" jika API blip
+  // MASTER CACHE: Menghalang item dari "hilang" (Persistent Map)
   const masterHistoryRef = useRef<Map<string, SoraHistoryItem>>(new Map());
 
-  // Pantau jika user tengah layan video
   useEffect(() => {
     isPlayingRef.current = Object.keys(activeVideo).length > 0 || Object.values(isProcessing).some(v => v);
   }, [activeVideo, isProcessing]);
@@ -53,7 +53,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   };
 
   const syncHistory = useCallback(async (showLoading = true) => {
-    // PAUSE SYNC: Jangan kacau kalau user tengah layan video/download
     if (isPlayingRef.current && !showLoading) return;
 
     if (showLoading) {
@@ -66,23 +65,18 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // RECONCILIATION LOGIC: Merge data baru ke dalam master cache
+        // RECONCILIATION: Merge data baru ke dalam master cache
         items.forEach((item: any) => {
           const model = (item.model_name || '').toLowerCase();
           const type = (item.type || '').toLowerCase();
           
           if (model.includes('sora') || model.includes('veo') || type.includes('video') || item.generated_video) {
             const existing = masterHistoryRef.current.get(item.uuid);
-            
             if (existing) {
-              const newUrl = resolveVideoUrl(item);
-              const oldUrl = resolveVideoUrl(existing);
-              
-              // Kemaskini status tapi kekalkan pautan video jika data baru kosong
               masterHistoryRef.current.set(item.uuid, { 
                 ...existing, 
                 ...item,
-                video_url: newUrl || oldUrl || existing.video_url
+                video_url: resolveVideoUrl(item) || resolveVideoUrl(existing) || existing.video_url
               });
             } else {
               masterHistoryRef.current.set(item.uuid, item);
@@ -90,26 +84,23 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
           }
         });
 
-        // Convert Map to sorted array (terbaru di atas)
-        // Fix for 'unknown' type error during sorting by explicitly typing the list and arguments
-        const sortedList: SoraHistoryItem[] = Array.from(masterHistoryRef.current.values()).sort((a: SoraHistoryItem, b: SoraHistoryItem) => 
+        // Fix: Explicitly cast Array.from result to SoraHistoryItem[] to prevent 'unknown[]' type error
+        const sortedList: SoraHistoryItem[] = (Array.from(masterHistoryRef.current.values()) as SoraHistoryItem[]).sort((a: SoraHistoryItem, b: SoraHistoryItem) => 
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
         setHistory(sortedList);
 
-        // SYNC STATUS: Jika ada yang tengah "Baking" (Status 1), poll dengan lebih kerap
-        // Fix for 'unknown' type error during status check by explicitly typing the item
+        // Agresif polling jika ada baking
         const hasActiveTasks = sortedList.some((item: SoraHistoryItem) => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
-        
         if (hasActiveTasks) {
           pollingTimerRef.current = window.setTimeout(() => syncHistory(false), 3000);
         }
       }
     } catch (err: any) {
-      console.error("Vault Archive sync error:", err);
-      if (showLoading) setError("Gagal menyegerak Vault. Sila klik butang Sync di atas.");
+      console.error("Vault Error:", err);
+      if (showLoading) setError("Masalah sambungan Vault Archive.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -117,14 +108,9 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     syncHistory(true);
-    
-    // Auto-sync background setiap 15 saat (hanya jika tak bermain video)
-    const interval = setInterval(() => syncHistory(false), 15000);
-    
-    // STUDIO SIGNAL: Dengar isyarat dari Studio bila video baru mula dijana
+    const interval = setInterval(() => syncHistory(false), 12000);
     const handleSyncSignal = () => syncHistory(false);
     window.addEventListener('sync_vault_signal', handleSyncSignal);
-    
     return () => {
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(interval);
@@ -134,26 +120,21 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   const handlePlay = async (item: SoraHistoryItem) => {
     const uuid = item.uuid;
-    if (activeVideo[uuid]) return; // Dah ada, jangan buat apa-apa
-
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
-      let url = resolveVideoUrl(item);
+      // FORCE FRESH FETCH: Sentiasa ambil data terbaru sebelum play untuk elakkan link expired
+      const details = await getSpecificHistory(uuid);
+      const freshData = details?.data || details?.result || details;
+      const freshUrl = resolveVideoUrl(freshData);
       
-      // Jika URL tiada dalam senarai ringkas, fetch details penuh
-      if (!url) {
-        const details = await getSpecificHistory(uuid);
-        const data = details?.data || details?.result || details;
-        url = resolveVideoUrl(data);
-        // Kemaskini master cache
-        masterHistoryRef.current.set(uuid, { ...item, ...data });
-      }
+      // Update cache
+      masterHistoryRef.current.set(uuid, { ...item, ...freshData, video_url: freshUrl });
 
-      if (url) {
-        const blobUrl = await fetchVideoAsBlob(url);
+      if (freshUrl) {
+        const blobUrl = await fetchVideoAsBlob(freshUrl);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("Video belum sedia untuk dimainkan.");
+        throw new Error("URL video tidak ditemui.");
       }
     } catch (e: any) {
       alert(`Gagal preview: ${e.message}`);
@@ -166,26 +147,24 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     const uuid = item.uuid;
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
-      let url = resolveVideoUrl(item);
-      if (!url) {
-        const details = await getSpecificHistory(uuid);
-        url = resolveVideoUrl(details?.data || details?.result || details);
-      }
+      // FORCE FRESH FETCH: Ambil link paling baru untuk download
+      const details = await getSpecificHistory(uuid);
+      const freshData = details?.data || details?.result || details;
+      const freshUrl = resolveVideoUrl(freshData);
       
-      if (url) {
-        const blobUrl = await fetchVideoAsBlob(url);
+      if (freshUrl) {
+        const blobUrl = await fetchVideoAsBlob(freshUrl);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.setAttribute('download', `Azmeer_Sora_${uuid.substring(0, 5)}.mp4`);
+        link.setAttribute('download', `Sora_${uuid.substring(0, 5)}.mp4`);
         document.body.appendChild(link);
         link.click();
         setTimeout(() => {
           document.body.removeChild(link);
-          // Revoke hanya jika ia adalah blob buatan sendiri
           if (blobUrl.startsWith('blob:')) window.URL.revokeObjectURL(blobUrl);
-        }, 500);
+        }, 300);
       } else {
-        alert("Pautan muat turun belum sedia.");
+        alert("Video belum sedia diproses.");
       }
     } catch (e: any) {
       alert(`Muat turun ralat: ${e.message}`);
@@ -215,7 +194,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'MENYEGERAK...' : 'SYNC VAULT'}
+            {loading ? 'MENYEGERAK...' : 'FORCE SYNC'}
           </button>
         </header>
 

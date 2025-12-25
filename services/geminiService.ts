@@ -9,42 +9,39 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menambah 'key' dan cache-buster ke dalam URL untuk media.
- * Memastikan URL sentiasa sah untuk download dan preview.
+ * Menggunakan timestamp berketepatan tinggi untuk memastikan browser refresh link baru.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
-  // Jika URL adalah blob, jangan ubah
   if (cleanUrl.startsWith('blob:')) return cleanUrl;
 
-  // Bina full URL jika ianya relative path
+  // Bina full URL jika relative path
   if (!cleanUrl.startsWith('http')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
     cleanUrl = `${GEMINIGEN_CDN_URL}${path}`;
   }
   
-  // Bersihkan double slashes (kecuali after protocol)
   cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, "$1");
 
   try {
     const urlObj = new URL(cleanUrl);
-    // Masukkan key jika belum ada dan bukan S3 pre-signed (biasanya ada X-Amz-Signature)
+    // Masukkan key jika bukan pre-signed S3 link
     if (!urlObj.searchParams.has('key') && !urlObj.searchParams.has('X-Amz-Signature')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
-    // Cache buster untuk data paling fresh
-    urlObj.searchParams.set('_burst', Date.now().toString());
+    // Force refresh dengan unique ID
+    urlObj.searchParams.set('_f', Date.now().toString() + Math.random().toString(36).substring(7));
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_b=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_f=${Date.now()}`;
   }
 };
 
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
-  // Untuk image/thumbnail, gunakan direct authenticated URL
   return prepareAuthenticatedUrl(url);
 };
 
@@ -52,18 +49,15 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
   
-  // Cache busting for API calls
   const separator = url.includes('?') ? '&' : '?';
-  const finalUrl = `${url}${separator}cb=${Date.now()}`;
+  const finalUrl = `${url}${separator}request_id=${Date.now()}`;
 
   try {
-    // Cubaan melalui proxy untuk elak CORS
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`;
     const response = await fetch(proxyUrl, { ...options, headers });
     if (!response.ok) throw new Error("Proxy Error");
     return response;
   } catch (e) {
-    // Fallback terus ke API jika proxy ralat
     return await fetch(finalUrl, { ...options, headers });
   }
 }
@@ -76,18 +70,17 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
 }
 
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
-  if (!url) throw new Error("URL video tidak sah.");
+  if (!url) throw new Error("URL video kosong.");
   const authUrl = prepareAuthenticatedUrl(url);
   
   try {
-    // Cuba ambil via proxy dahulu (paling selamat untuk CORS)
+    // Gunakan CORS Proxy untuk mengelakkan sekatan download dari CDN yang berbeza
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
     const response = await fetch(proxyUrl);
     
     if (!response.ok) {
-      // Jika proxy gagal, cuba direct
       const directResponse = await fetch(authUrl);
-      if (!directResponse.ok) throw new Error("Video stream inaccessible.");
+      if (!directResponse.ok) throw new Error("Server media tidak memberi respon.");
       const blob = await directResponse.blob();
       return URL.createObjectURL(blob);
     }
@@ -95,18 +88,17 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
-    console.warn("Resilient fetch failed, falling back to direct URL:", e);
-    // Jika semua gagal, return URL yang dah ada auth key (sebagai fallback terakhir)
-    return authUrl;
+    console.warn("Fetch video fallback logic triggered.");
+    return authUrl; 
   }
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
-  return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
+  return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&t=${Date.now()}`);
 };
 
 export const getSpecificHistory = async (uuid: string) => {
-  return await fetchApi(`/history/${uuid}`);
+  return await fetchApi(`/history/${uuid}?t=${Date.now()}`);
 };
 
 export const generateSoraVideo = async (params: {
@@ -117,7 +109,7 @@ export const generateSoraVideo = async (params: {
   userId: string;
 }) => {
   const allowed = await canGenerate(params.userId, 'video');
-  if (!allowed) throw new Error("Had janaan anda telah tamat.");
+  if (!allowed) throw new Error("Limit janaan anda sudah habis.");
 
   const formData = new FormData();
   formData.append('prompt', params.prompt);
@@ -141,7 +133,7 @@ export const generateSoraVideo = async (params: {
   return result;
 };
 
-// --- LOGIK DI LOCK (SISTEM STABIL) ---
+// --- LOCKED LOGIC (SISTEM STABIL) ---
 export const generateText = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
@@ -224,7 +216,7 @@ export const generateImage = async (prompt: string, aspectRatio: string) => {
       }
     }
   }
-  throw new Error("Tiada imej yang dijana.");
+  throw new Error("Gagal jana imej.");
 };
 
 export const startVideoGeneration = async (prompt: string) => {
