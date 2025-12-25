@@ -15,26 +15,45 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
   const pollingTimerRef = useRef<number | null>(null);
 
+  /**
+   * Fungsi Pencarian URL Video (Dikuatkan)
+   * Mengimbas secara agresif dalam semua medan yang mungkin dipulangkan oleh GeminiGen API.
+   */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
     
+    // 1. Periksa array generated_video (Standard format)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
-      const vid = item.generated_video[0];
-      return vid.video_url || vid.video_uri || '';
+      for (const vid of item.generated_video) {
+        const url = vid.video_url || vid.video_uri || vid.video_path || '';
+        if (url) return url;
+      }
     }
 
+    // 2. Periksa medan generate_result (Seringkali JSON string atau URL mentah)
     if (item.generate_result) {
       if (typeof item.generate_result === 'string') {
         if (item.generate_result.startsWith('http')) return item.generate_result;
         try {
           const parsed = JSON.parse(item.generate_result);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed[0]?.video_url || parsed[0]?.video_uri || '';
-          return parsed.video_url || parsed.video_uri || '';
-        } catch (e) {}
+          // Cuba cari dalam array
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const first = parsed[0];
+            return first.video_url || first.video_uri || first.video_path || first.url || '';
+          }
+          // Cuba cari dalam object
+          return parsed.video_url || parsed.video_uri || parsed.video_path || parsed.url || '';
+        } catch (e) {
+          // Jika bukan JSON tapi ada rupa URL
+          if (item.generate_result.includes('.mp4')) return item.generate_result;
+        }
+      } else if (typeof item.generate_result === 'object') {
+         return item.generate_result.video_url || item.generate_result.video_uri || item.generate_result.url || '';
       }
     }
-    
-    return '';
+
+    // 3. Periksa top-level fields yang mungkin wujud
+    return item.video_uri || item.video_url || item.url || '';
   };
 
   const fetchHistory = useCallback(async (showLoading = true) => {
@@ -44,7 +63,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
     
     try {
-      // getAllHistory dah ada _t=Date.now() di geminiService.ts
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
@@ -60,19 +78,19 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
-        // SYNC AGGRESIF (3S) untuk tugasan aktif
+        // SYNC AGGRESIF (4S) untuk video yang berstatus 'Processing' (1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 3000);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 4000);
         }
       } else {
         setHistory([]);
       }
     } catch (err: any) {
-      console.error("Sync error:", err);
-      if (showLoading) setError("Connection failed. Sila cuba lagi.");
+      console.error("Vault sync failed:", err);
+      if (showLoading) setError("Connection failed. Sila refresh manual Vault hampa.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -80,11 +98,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     fetchHistory(true);
-    
-    // Background sync dipercepatkan kepada 10 saat
-    const globalSync = setInterval(() => fetchHistory(false), 10000);
-
+    // Auto sync setiap 12 saat untuk memastikan status video sentiasa dikemaskini
+    const globalSync = setInterval(() => fetchHistory(false), 12000);
     return () => {
+      // Perbaiki ralat pollingRef -> pollingTimerRef
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(globalSync);
     };
@@ -97,10 +114,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
       let url = resolveVideoUrl(item);
+      
+      // Jika URL tak ada dalam data list, cuba ambil dari endpoint specific history
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
+        // Kemaskini local state supaya URL tak hilang bila refresh
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
@@ -108,10 +128,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const finalUrl = prepareAuthenticatedUrl(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: finalUrl }));
       } else {
-        throw new Error("Pautan media tidak ditemui.");
+        throw new Error("Pautan video belum sedia atau tiada di server.");
       }
     } catch (e: any) {
-      alert(`Gagal muat turun video preview.`);
+      alert(`Gagal Preview: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -128,10 +148,19 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
       if (url) {
         const finalUrl = prepareAuthenticatedUrl(url);
-        window.open(finalUrl, '_blank');
+        // Buka pautan dalam tab baru dengan API Key untuk muat turun terus
+        const link = document.createElement('a');
+        link.href = finalUrl;
+        link.target = '_blank';
+        link.download = `azmeer-ai-video-${uuid.substring(0, 8)}.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        alert("Video belum sedia untuk dimuat turun.");
       }
     } catch (e: any) {
-      alert(`Download Error.`);
+      alert(`Ralat muat turun. Sila cuba lagi.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -147,7 +176,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
               <p className="text-cyan-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.5em]">vault</p>
             </div>
             <h2 className="text-3xl md:text-5xl font-black text-white tracking-tighter uppercase leading-none">
-              History <span className="text-slate-800">Archive</span>
+              Vault <span className="text-slate-800">Archive</span>
             </h2>
           </div>
           <button 
@@ -158,7 +187,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'Sila Tunggu...' : 'Refresh Vault'}
+            {loading ? 'Penyelarasan...' : 'Refresh Vault'}
           </button>
         </header>
 
@@ -170,7 +199,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
         {history.length === 0 && !loading && !error ? (
           <div className="text-center py-20 md:py-40 border-2 border-dashed border-slate-900 rounded-[2rem] md:rounded-[3rem] bg-slate-900/10 px-6">
-            <p className="text-slate-600 font-bold uppercase tracking-widest text-[10px] md:text-xs">Tiada rekod video ditemui.</p>
+            <p className="text-slate-600 font-bold uppercase tracking-widest text-[10px] md:text-xs">Tiada rekod penjanaan video dijumpai.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8 pb-32">
@@ -184,9 +213,20 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                 <div key={item.uuid} className="group bg-[#0f172a]/30 border border-slate-800/50 rounded-[2rem] overflow-hidden hover:border-cyan-500/30 transition-all duration-500 flex flex-col shadow-lg">
                   <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden">
                     {videoSrc ? (
-                      <video src={videoSrc} className="w-full h-full object-cover" controls autoPlay playsInline loop />
+                      <video 
+                        src={videoSrc} 
+                        className="w-full h-full object-cover" 
+                        controls 
+                        autoPlay 
+                        playsInline 
+                        loop 
+                      />
                     ) : item.thumbnail_url ? (
-                      <img src={prepareAuthenticatedUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
+                      <img 
+                        src={prepareAuthenticatedUrl(item.thumbnail_url)} 
+                        className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" 
+                        alt="Preview Thumbnail" 
+                      />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950">
                         {status === 1 ? (
@@ -194,6 +234,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                              <div className="w-10 h-10 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
                              <span className="text-white font-black text-lg">{progress}%</span>
                            </div>
+                        ) : status === 3 ? (
+                          <div className="text-center p-6 flex flex-col items-center gap-2">
+                            <svg className="w-8 h-8 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <span className="text-[9px] text-rose-500 font-black uppercase">Render Gagal</span>
+                          </div>
                         ) : (
                           <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                         )}
@@ -222,8 +267,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       <div className="font-mono text-[8px] md:text-[9px] text-slate-500 tracking-tighter uppercase">{item.uuid.substring(0, 8)}...</div>
                       <div className="text-[8px] md:text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleDateString()}</div>
                     </div>
-                    <p className="text-slate-300 text-[11px] md:text-xs font-medium leading-relaxed line-clamp-3 mb-5 md:mb-6 flex-1 italic">
-                      "{item.input_text || 'Tiada prompt.'}"
+                    <p className="text-slate-300 text-[10px] md:text-xs font-medium leading-relaxed line-clamp-3 mb-5 md:mb-6 flex-1 italic">
+                      "{item.input_text || 'Tiada prompt direkodkan.'}"
                     </p>
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
                       <div className="flex flex-col">
@@ -234,6 +279,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         onClick={() => handleDownload(item)}
                         disabled={processing || status !== 2}
                         className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-20"
+                        title="Download MP4"
                       >
                         <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       </button>
