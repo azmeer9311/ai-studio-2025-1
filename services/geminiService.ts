@@ -31,19 +31,18 @@ export const prepareAuthenticatedUrl = (url: string): string => {
     if (!urlObj.searchParams.has('key') && !urlObj.searchParams.has('X-Amz-Signature')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
-    // Force refresh dengan unique ID yang lebih agresif
-    urlObj.searchParams.set('_ts', Date.now().toString());
-    urlObj.searchParams.set('_nonce', Math.random().toString(36).substring(7));
+    // Force refresh dengan unique ID yang lebih agresif (Timestamp + Nonce)
+    urlObj.searchParams.set('_v_fresh', Date.now().toString());
+    urlObj.searchParams.set('_n', Math.random().toString(36).substring(2, 10));
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_ts=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_v_fresh=${Date.now()}`;
   }
 };
 
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
-  // Untuk image/thumbnail kita masih guna auth URL
   return prepareAuthenticatedUrl(url);
 };
 

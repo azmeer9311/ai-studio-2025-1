@@ -34,25 +34,26 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const v = item.generated_video[0];
       const url = v.video_url || v.video_uri || v.url;
-      if (url && !url.includes('thumb')) return url;
+      // Pastikan bukan thumbnail path
+      if (url && !url.toLowerCase().includes('thumb') && !url.toLowerCase().includes('preview_image')) return url;
     }
     
     // 2. Check generate_result JSON structure
     if (item.generate_result) {
       const res = item.generate_result;
-      if (typeof res === 'string' && res.startsWith('http') && !res.includes('thumb')) {
+      if (typeof res === 'string' && res.startsWith('http') && !res.toLowerCase().includes('thumb')) {
         return res;
       }
       try {
         const parsed = typeof res === 'string' ? JSON.parse(res) : res;
         const url = Array.isArray(parsed) ? (parsed[0]?.video_url || parsed[0]?.url) : (parsed.video_url || parsed.url);
-        if (url && !url.includes('thumb')) return url;
+        if (url && !url.toLowerCase().includes('thumb')) return url;
       } catch (e) {}
     }
     
     // 3. Check direct fields
     const directUrl = item.video_url || item.video_uri || item.url || item.file_download_url;
-    if (directUrl && !directUrl.includes('thumb')) return directUrl;
+    if (directUrl && !directUrl.toLowerCase().includes('thumb')) return directUrl;
     
     return '';
   };
@@ -134,20 +135,20 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     const uuid = item.uuid;
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
-      // 1. FORCE RE-FETCH: Dapatkan state terkini dari DB
+      // 1. FORCE RE-FETCH: Ambil pautan paling fresh dari server setiap kali butang ditekan
       const details = await getSpecificHistory(uuid);
       const freshData = details?.data || details?.result || details;
       const freshUrl = resolveVideoUrl(freshData);
       
-      // 2. Update local cache immediately
+      // 2. Kemaskini master cache local
       masterHistoryRef.current.set(uuid, { ...item, ...freshData, video_url: freshUrl });
 
       if (freshUrl) {
-        // 3. Fetch as blob for stable preview
+        // 3. Muat turun sebagai blob dengan logic refresh terbina dalam geminiService
         const blobUrl = await fetchVideoAsBlob(freshUrl);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("Pautan video gagal dijana oleh server.");
+        throw new Error("Pautan video sebenar tidak ditemui dalam rekod server.");
       }
     } catch (e: any) {
       alert(`Preview Gagal: ${e.message}`);
@@ -169,11 +170,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const freshUrl = resolveVideoUrl(freshData);
       
       if (freshUrl) {
-        // 2. Muat turun menggunakan blob strategy
+        // 2. Muat turun menggunakan blob strategy dengan refresh URL
         const blobUrl = await fetchVideoAsBlob(freshUrl);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.setAttribute('download', `Video_${uuid.substring(0, 5)}.mp4`);
+        link.setAttribute('download', `Sora_Video_${uuid.substring(0, 5)}.mp4`);
         document.body.appendChild(link);
         link.click();
         setTimeout(() => {
@@ -181,7 +182,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
           if (blobUrl.startsWith('blob:')) window.URL.revokeObjectURL(blobUrl);
         }, 500);
       } else {
-        alert("Server belum menyiapkan pautan muat turun.");
+        alert("Server belum menyiapkan pautan video sebenar.");
       }
     } catch (e: any) {
       alert(`Muat Turun Ralat: ${e.message}`);
