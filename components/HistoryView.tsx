@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, fetchVideoAsBlob, prepareAuthenticatedUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
@@ -46,11 +45,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
     
     try {
+      // Sync dengan API Geminigen.ai - getAllHistory sekarang dah ada cache busting
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // We sync everything that looks like a video generation
+        // Filter rekod sora/video sahaja
         const filteredItems = items.filter((item: any) => {
           const typeStr = (item.type || '').toLowerCase();
           const modelStr = (item.model_name || '').toLowerCase();
@@ -62,11 +62,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
-        // Polling if items are still processing
+        // Auto-Sync/Polling lebih pantas (5s) jika ada tugasan aktif (status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
-        if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+        if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
+        
         if (hasActiveTasks) {
-           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 8000);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 5000);
         }
       } else {
         setHistory([]);
@@ -81,8 +82,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     fetchHistory(true);
+    
+    // Global sync setiap 20 saat untuk memastikan Vault sentiasa up-to-date
+    const globalSync = setInterval(() => fetchHistory(false), 20000);
+
     return () => {
-      if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+      if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
+      clearInterval(globalSync);
     };
   }, [fetchHistory]);
 
@@ -191,7 +197,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                              <span className="text-white font-black text-xl leading-none">{progress}%</span>
                            </div>
                         ) : (
-                          <svg className="w-12 h-12 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                          <svg className="w-12 h-12 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                         )}
                       </div>
                     )}

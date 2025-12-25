@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { generateSoraVideo, getSpecificHistory, fetchVideoAsBlob } from '../services/geminiService';
 import { generateUGCPrompt } from '../services/openaiService';
@@ -61,11 +60,16 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       const data = response?.data || response?.result || response;
       if (data) {
         const currentStatus = Number(data.status);
-        setProgress(data.status_percentage || 0);
+        const currentProgress = Number(data.status_percentage) || 0;
+        
+        // Memastikan progress sentiasa dikemaskini dalam UI
+        setProgress(currentProgress);
+
         if (currentStatus === 1) {
-          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 4000);
+          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
+          setProgress(100);
           let videoUrl = '';
           if (data.generated_video && data.generated_video.length > 0) {
             videoUrl = data.generated_video[0].video_url || data.generated_video[0].video_uri;
@@ -103,8 +107,12 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         userId: userProfile.id
       });
       const uuid = response?.data?.uuid || response?.uuid || response?.result?.uuid;
-      if (uuid) pollStatus(uuid);
-      else if (onViewChange) onViewChange(AppView.HISTORY);
+      if (uuid) {
+        pollStatus(uuid);
+      } else {
+        alert("Gagal memulakan proses. Sila semak limit hampa.");
+        setIsGenerating(false);
+      }
     } catch (error: any) {
       setIsGenerating(false);
       alert(error.message || "Sora generation failed.");
@@ -126,7 +134,6 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       });
       setPrompt(ugcPrompt);
       setDuration(15);
-      // Auto switch ratio based on platform for best results
       if (wizardPlatform === 'tiktok') setAspectRatio('portrait');
     } catch (error: any) {
       alert("Gagal hubungi OpenAI: " + error.message);
@@ -165,30 +172,30 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             {/* UGC Wizard Interface */}
             <div className="bg-slate-900/40 border border-slate-800 rounded-[2.5rem] p-6 space-y-5">
               <div className="flex items-center justify-between">
-                 <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI UGC Wizard</h3>
+                 <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">AI UGC Config</h3>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Watak (Character)</label>
+                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Watak (Gender)</label>
                   <select 
                     value={wizardGender}
                     onChange={(e) => setWizardGender(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-[10px] font-bold text-white uppercase outline-none focus:border-cyan-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-3 text-[10px] font-bold text-slate-300 uppercase outline-none focus:border-cyan-500/50"
                   >
                     <option value="perempuan">Perempuan Melayu</option>
                     <option value="lelaki">Lelaki Melayu</option>
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Platform</label>
+                  <label className="text-[9px] font-bold text-slate-600 uppercase ml-1">Platform (CTA)</label>
                   <select 
                     value={wizardPlatform}
                     onChange={(e) => setWizardPlatform(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-[10px] font-bold text-white uppercase outline-none focus:border-cyan-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-3 text-[10px] font-bold text-slate-300 uppercase outline-none focus:border-cyan-500/50"
                   >
                     <option value="tiktok">TikTok (Beg Kuning)</option>
-                    <option value="facebook">Facebook (Learn More)</option>
+                    <option value="facebook">FB (Learn More)</option>
                   </select>
                 </div>
               </div>
@@ -237,7 +244,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             <div className="bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800/50 p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative">
               <div className="space-y-6">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Rujukan Gambar (Optional)</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Rujukan Gambar (Image to Video)</label>
                   {!filePreview ? (
                     <div onClick={() => !isLocked && fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all">
                       <svg className="w-8 h-8 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>

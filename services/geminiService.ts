@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { canGenerate, updateUsage } from "./authService";
 
@@ -95,7 +94,8 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
   try {
-    const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
+    // Ditambah _t untuk cache busting supaya history auto sync dengan GeminiGen
+    const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&_t=${Date.now()}`;
     return await fetchApi(endpoint);
   } catch (e) {
     console.warn("Vault retrieval issue:", e);
@@ -104,7 +104,7 @@ export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
 };
 
 export const getSpecificHistory = async (uuid: string) => {
-  return fetchApi(`/history/${uuid}`);
+  return fetchApi(`/history/${uuid}?_t=${Date.now()}`);
 };
 
 export const generateSoraVideo = async (params: {
