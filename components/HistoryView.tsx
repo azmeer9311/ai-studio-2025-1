@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, getProxiedMediaUrl, fetchVideoAsBlob } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
@@ -61,6 +60,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
+        // Filter specifically for video or sora related tasks
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
@@ -69,11 +69,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
+        // Check if we have active processing tasks (status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
+        
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 5000);
+          // If tasks are processing, poll more frequently (every 3 seconds)
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 3000);
         }
       } else {
         setHistory([]);
@@ -86,9 +89,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
   }, []);
 
+  // Initial fetch and standard interval sync
   useEffect(() => {
     fetchHistory(true);
-    const globalSync = setInterval(() => fetchHistory(false), 20000);
+    
+    // Background global sync every 15 seconds to catch new items
+    const globalSync = setInterval(() => fetchHistory(false), 15000);
+    
     return () => {
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(globalSync);
@@ -111,7 +118,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
 
       if (url) {
-        // MUDAH & STABIL: Tukar URL server kepada Blob URL tempatan untuk memintas ralat CORS 100%
         const blobUrl = await fetchVideoAsBlob(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
@@ -135,17 +141,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
       
       if (url) {
-        // STRATEGI BARU: Download fail sebagai blob dahulu untuk memintas CORS
         const blobUrl = await fetchVideoAsBlob(url);
         
-        // Cipta link muat turun maya
         const link = document.createElement('a');
         link.href = blobUrl;
         link.setAttribute('download', `SoraVideo_${uuid.substring(0, 8)}.mp4`);
         document.body.appendChild(link);
         link.click();
         
-        // Bersihkan semula
         setTimeout(() => {
           document.body.removeChild(link);
           window.URL.revokeObjectURL(blobUrl);
@@ -201,7 +204,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
               const videoSrc = activeVideo[item.uuid];
               const processing = isProcessing[item.uuid];
               const status = Number(item.status);
-              const progress = item.status_percentage || 0;
+              const progress = item.status_percentage || item.progress || 0;
 
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/30 border border-slate-800/50 rounded-[2rem] overflow-hidden hover:border-cyan-500/30 transition-all duration-500 flex flex-col shadow-lg">

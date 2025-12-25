@@ -57,10 +57,13 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
   const pollStatus = async (uuid: string) => {
     try {
       const response = await getSpecificHistory(uuid);
-      const data = response?.data || response?.result || response;
+      // More robust data extraction based on actual API response patterns
+      const data = response?.data || response?.result || (response?.uuid ? response : null);
+      
       if (data) {
         const currentStatus = Number(data.status);
-        const currentProgress = Number(data.status_percentage) || 0;
+        // Ensure we handle both status_percentage and progress fields if they vary
+        const currentProgress = Number(data.status_percentage) || Number(data.progress) || 0;
         
         setProgress(currentProgress);
 
@@ -88,6 +91,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         }
       }
     } catch (e) {
+      // Retry on network error
       pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
     }
   };
@@ -105,7 +109,8 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         imageFile: selectedFile || undefined,
         userId: userProfile.id
       });
-      const uuid = response?.data?.uuid || response?.uuid || response?.result?.uuid;
+      // Handle response structure differences
+      const uuid = response?.data?.uuid || response?.uuid || response?.result?.uuid || response?.result?.data?.uuid;
       if (uuid) {
         pollStatus(uuid);
       } else {
