@@ -13,13 +13,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeVideo, setActiveVideo] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
+  
   const pollingTimerRef = useRef<number | null>(null);
-  const historyRef = useRef<SoraHistoryItem[]>([]);
+  const isPlayingRef = useRef<boolean>(false);
 
-  // Update ref whenever history changes to allow comparison in fetch
+  // Sync ref with state for use in callbacks
   useEffect(() => {
-    historyRef.current = history;
-  }, [history]);
+    isPlayingRef.current = Object.keys(activeVideo).length > 0;
+  }, [activeVideo]);
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
@@ -48,76 +49,68 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   };
 
   const fetchHistory = useCallback(async (showLoading = true) => {
+    // CRITICAL: Stop refreshing if user is currently playing a video to prevent UI jitter/loss
+    if (isPlayingRef.current && !showLoading) return;
+
     if (showLoading) {
       setLoading(true);
       setError(null);
     }
     
     try {
-      // Fetch with cache buster in geminiService
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
-      if (Array.isArray(items) && items.length > 0) {
-        // BROAD SYNC: Filter with high tolerance
+      if (Array.isArray(items)) {
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
           const statusVal = Number(item.status);
           
-          const isRelevant = type.includes('video') || 
-                            model.includes('sora') || 
-                            model.includes('veo') || 
-                            !!item.generated_video || 
-                            !!item.thumbnail_url || 
-                            !!item.generate_result;
-
-          const isLiveTask = statusVal === 1; // Baking
-          const isFinished = statusVal === 2; // Success
-          
-          return isLiveTask || isRelevant || isFinished;
+          return type.includes('video') || 
+                 model.includes('sora') || 
+                 model.includes('veo') || 
+                 !!item.generated_video || 
+                 statusVal === 1 || 
+                 statusVal === 2;
         });
         
-        // STABILITY FIX: If we have existing items and the new fetch is empty, 
-        // don't clear the state. This prevents flickering.
-        if (filteredItems.length > 0) {
+        // STABILITY FIX: If we have data, update. If response is empty but we already had items, 
+        // DO NOT clear the history. This prevents the "sekejap ada sekejap hilang" issue.
+        if (filteredItems.length > 0 || !history.length) {
           setHistory(filteredItems);
         }
 
-        // AGGRESSIVE SYNC: If anything is baking, poll at 1.5s frequency
+        // AGGRESSIVE SYNC: If anything is still baking (Status 1), keep polling
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 1500);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
         }
-      } else if (Array.isArray(items) && items.length === 0 && historyRef.current.length === 0) {
-        // Only clear if both are empty
-        setHistory([]);
       }
     } catch (err: any) {
-      console.error("Vault retrieval sync failed:", err);
-      // Don't show error if it's a background poll
-      if (showLoading) setError("Penyelarasan Vault tergendala. Sila refresh manual.");
+      console.error("Vault sync failed:", err);
+      if (showLoading) setError("Gagal menyegerak Vault. Sila cuba lagi.");
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [history.length]);
 
   useEffect(() => {
     fetchHistory(true);
     
-    // Background safety sync (Every 8 seconds to stay fresh without overwhelming)
-    const backgroundInterval = setInterval(() => fetchHistory(false), 8000);
+    // Auto-refresh every 10s if not playing
+    const interval = setInterval(() => fetchHistory(false), 10000);
     
-    // MASTER SYNC: Listen for real-time broadcast from Studio
+    // Listen for instant sync signal from Studio
     const handleSync = () => fetchHistory(false);
     window.addEventListener('sync_vault_signal', handleSync);
     
     return () => {
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
-      clearInterval(backgroundInterval);
+      clearInterval(interval);
       window.removeEventListener('sync_vault_signal', handleSync);
     };
   }, [fetchHistory]);
@@ -134,7 +127,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
-        // Only update the specific item in state to avoid global flicker
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
@@ -142,10 +134,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const blobUrl = await fetchVideoAsBlob(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("Pautan video tidak ditemui.");
+        throw new Error("Video URL not found.");
       }
     } catch (e: any) {
-      alert(`Gagal memuatkan pratonton: ${e.message}`);
+      alert(`Gagal preview: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -165,15 +157,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const blobUrl = await fetchVideoAsBlob(url);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.setAttribute('download', `SoraVideo_${uuid.substring(0, 8)}.mp4`);
+        link.setAttribute('download', `Sora_${uuid.substring(0, 5)}.mp4`);
         document.body.appendChild(link);
         link.click();
         setTimeout(() => {
           document.body.removeChild(link);
           window.URL.revokeObjectURL(blobUrl);
         }, 100);
-      } else {
-        alert("Video belum sedia.");
       }
     } catch (e: any) {
       alert(`Ralat muat turun.`);
@@ -203,7 +193,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'Menyegerak...' : 'Sync History'}
+            {loading ? 'Penyelarasan...' : 'Refresh Vault'}
           </button>
         </header>
 
@@ -247,7 +237,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         ) : item.thumbnail_url ? (
                           <img src={getProxiedMediaUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                         ) : (
-                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
+                          <div className="flex flex-col items-center gap-2 opacity-20">
+                            <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
+                            <span className="text-[8px] font-black uppercase">Tiada Thumbnail</span>
+                          </div>
                         )}
                       </div>
                     )}
