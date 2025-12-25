@@ -9,12 +9,13 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menambah 'key' ke dalam URL untuk media (video/image/audio).
- * Mengikut dokumen: fetch(`${downloadLink}&key=${process.env.API_KEY}`)
+ * Penting: Menggunakan 'key' mengikut dokumentasi rasmi GeminiGen.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
+  // Jika URL adalah path relatif, tambah domain CDN
   if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
     cleanUrl = `${GEMINIGEN_CDN_URL}${path}`;
@@ -24,22 +25,27 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 
   try {
     const urlObj = new URL(cleanUrl);
-    // Tukar dari 'api_key' kepada 'key' mengikut dokumentasi rasmi
     urlObj.searchParams.set('key', GEMINIGEN_KEY);
-    urlObj.searchParams.set('_t', Date.now().toString());
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_t=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}`;
   }
 };
 
 /**
- * Fungsi fetch yang memintas ralat CORS menggunakan corsproxy.io.
- * Menghantar x-api-key dalam header untuk permintaan JSON.
+ * Menghasilkan URL yang diproksi untuk memintas ralat CORS pada elemen <video> dan <img>.
+ */
+export const getProxiedMediaUrl = (url: string): string => {
+  if (!url) return '';
+  const authUrl = prepareAuthenticatedUrl(url);
+  return `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
+};
+
+/**
+ * Fungsi fetch yang memintas ralat CORS menggunakan proxy untuk permintaan API.
  */
 async function robustFetch(url: string, options: RequestInit = {}) {
-  // Gunakan proxy untuk permintaan API JSON
   const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
   
   const headers = new Headers(options.headers || {});
@@ -56,9 +62,7 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   });
 
   if (!response.ok) {
-    // Fallback jika proxy bermasalah
-    const directResponse = await fetch(url, { ...options, headers });
-    return directResponse;
+    return await fetch(url, { ...options, headers });
   }
 
   return response;
@@ -72,22 +76,20 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
 }
 
 /**
- * Memuatkan video sebagai Blob untuk mengelakkan ralat 'No-CORS' pada tag video.
+ * Memuatkan video sebagai Blob (Fallback jika penstriman terus gagal).
  */
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   if (!url) throw new Error("URL tidak sah");
-  const authenticatedUrl = prepareAuthenticatedUrl(url);
+  const authUrl = prepareAuthenticatedUrl(url);
   
   try {
-    // Kita fetch terus melalui proxy untuk dapatkan data blob
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authenticatedUrl)}`;
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
     const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error("Gagal fetch media");
+    if (!response.ok) throw new Error("Gagal memuat turun data media.");
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
-    console.warn("Blob fetch failed, falling back to authenticated URL");
-    return authenticatedUrl;
+    return authUrl;
   }
 };
 
@@ -137,8 +139,7 @@ export const generateSoraVideo = async (params: {
   return result;
 };
 
-// --- SISTEM YANG DILOCK (TIDAK DIUBAH) ---
-
+// --- LOGIK DI LOCK (JANGAN USIK) ---
 export const generateText = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({

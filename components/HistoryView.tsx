@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, fetchVideoAsBlob } from '../services/geminiService';
+import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, getProxiedMediaUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
 
 interface HistoryViewProps {
@@ -17,18 +17,18 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   /**
    * Fungsi Pencarian URL Video (Deep Resolution)
-   * Menangani data yang kadangkala tersimpan dalam nested arrays atau JSON strings.
+   * Mencari URL video dalam struktur data API yang mungkin berbeza.
    */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
     
-    // 1. Periksa array generated_video (Standard GeminiGen)
+    // 1. Periksa array generated_video
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const v = item.generated_video[0];
       return v.video_url || v.video_uri || v.url || '';
     }
 
-    // 2. Periksa medan generate_result (Sering kali mengandungi pautan video terus)
+    // 2. Periksa medan generate_result (Boleh jadi URL terus atau string JSON)
     if (item.generate_result) {
       const res = item.generate_result;
       if (typeof res === 'string') {
@@ -48,7 +48,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
 
     // 3. Backup fields
-    return item.video_url || item.video_uri || item.url || '';
+    return item.video_url || item.video_uri || item.url || item.file_download_url || '';
   };
 
   const fetchHistory = useCallback(async (showLoading = true) => {
@@ -62,16 +62,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // Tapis hanya video
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
-          return type.includes('video') || model.includes('sora') || model.includes('veo');
+          return type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
         });
         
         setHistory(filteredItems);
 
-        // Polling jika ada yang masih 'Processing' (status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
@@ -106,7 +104,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
       
-      // Jika URL tiada dalam list, tarik detail penuh
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
@@ -115,14 +112,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       }
 
       if (url) {
-        // Gunakan Blob fetch untuk memintas CORS pada elemen video
-        const blobUrl = await fetchVideoAsBlob(url);
-        setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
+        // Guna pautan proksi terus untuk penstriman yang lancar tanpa ralat CORS
+        const proxiedUrl = getProxiedMediaUrl(url);
+        setActiveVideo(prev => ({ ...prev, [uuid]: proxiedUrl }));
       } else {
-        throw new Error("Pautan video tidak dijumpai.");
+        throw new Error("Pautan video tidak ditemui.");
       }
     } catch (e: any) {
-      alert(`Gagal memuatkan video: ${e.message}`);
+      alert(`Gagal memuatkan pratonton: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -140,19 +137,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       
       if (url) {
         const finalUrl = prepareAuthenticatedUrl(url);
-        // Direct download link
-        const link = document.createElement('a');
-        link.href = finalUrl;
-        link.target = '_blank';
-        link.download = `SoraVideo_${uuid.substring(0, 8)}.mp4`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        // Membuka pautan terus di tab baru supaya pelayar boleh mengendalikan muat turun fail .mp4
+        window.open(finalUrl, '_blank');
       } else {
-        alert("Video belum tersedia.");
+        alert("Video belum tersedia untuk dimuat turun.");
       }
     } catch (e: any) {
-      alert(`Ralat muat turun.`);
+      alert(`Ralat muat turun. Sila cuba lagi.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -215,7 +206,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       />
                     ) : item.thumbnail_url ? (
                       <img 
-                        src={prepareAuthenticatedUrl(item.thumbnail_url)} 
+                        src={getProxiedMediaUrl(item.thumbnail_url)} 
                         className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" 
                         alt="Thumbnail" 
                         onError={(e) => (e.currentTarget.style.display = 'none')}
@@ -233,7 +224,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                             <span className="text-[9px] text-rose-500 font-black uppercase">Render Gagal</span>
                           </div>
                         ) : (
-                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
+                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                         )}
                       </div>
                     )}
