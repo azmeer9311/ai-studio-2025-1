@@ -60,16 +60,16 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       
       if (data) {
         const currentStatus = Number(data.status);
-        // Robust progress detection from multiple possible field names
+        
+        // Robust progress detection with safety fallback
         const currentProgress = Number(data.status_percentage) || 
                                Number(data.progress) || 
                                Number(data.percent) || 
-                               Number(data.percentage) || 
-                               (currentStatus === 1 ? progress + 1 : 0);
+                               Number(data.percentage) || 0;
         
         setProgress(Math.min(99, Math.max(progress, currentProgress)));
 
-        // Notify HistoryView to refresh its list
+        // CRITICAL: Notify Vault/History to refresh its list
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
 
         if (currentStatus === 1) {
@@ -93,6 +93,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             setRenderedVideoUrl(blob);
           }
           
+          // Signal final completion
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         } else if (currentStatus === 3) {
           setIsGenerating(false);
@@ -126,6 +127,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                    response?.data?.data?.uuid;
 
       if (uuid) {
+        // Broadcast that a new task started
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         pollStatus(uuid);
       } else {
