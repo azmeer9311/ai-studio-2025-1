@@ -55,18 +55,20 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
-          return type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
+          const processing = Number(item.status) === 1;
+          return processing || type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
         });
         
         setHistory(filteredItems);
 
-        // Jika ada item yang masih 'status 1' (Processing), teruskan polling pantas
+        // Check if any items are still processing (Status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
+        // If there are active tasks, poll every 2 seconds to show progress moving
         if (hasActiveTasks) {
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 4000);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
         }
       } else {
         setHistory([]);
@@ -82,21 +84,19 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Background sync global setiap 15 saat (Safety net)
+    // Safety sync every 15 seconds
     const globalSync = setInterval(() => fetchHistory(false), 15000);
     
-    // LISTENER: Refresh Vault bila ada isyarat dari StudioView (Storage API)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'sync_vault') {
-        fetchHistory(false);
-      }
+    // LISTEN for signals from SoraStudioView.tsx within the same tab
+    const handleSyncSignal = () => {
+      fetchHistory(false);
     };
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('sync_vault_signal', handleSyncSignal);
     
     return () => {
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(globalSync);
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('sync_vault_signal', handleSyncSignal);
     };
   }, [fetchHistory]);
 
@@ -200,8 +200,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
               const videoSrc = activeVideo[item.uuid];
               const processing = isProcessing[item.uuid];
               const status = Number(item.status);
-              // Cari peratus dlm pelbagai medan secara dinamik
-              const progress = item.status_percentage || (item as any).progress || (item as any).percent || 0;
+              
+              // Enhanced detection of progress percentage
+              const progressRaw = (item as any).status_percentage || (item as any).progress || (item as any).percent || (item as any).percentage || 0;
+              const progress = Math.min(100, Number(progressRaw));
 
               return (
                 <div key={item.uuid} className="group bg-[#0f172a]/30 border border-slate-800/50 rounded-[2rem] overflow-hidden hover:border-cyan-500/30 transition-all duration-500 flex flex-col shadow-lg">
@@ -227,7 +229,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         {status === 1 ? (
                            <div className="flex flex-col items-center gap-4">
                              <div className="w-10 h-10 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
-                             <span className="text-white font-black text-lg">{progress}%</span>
+                             <span className="text-white font-black text-lg">{progress > 0 ? `${progress}%` : 'BAKING...'}</span>
                            </div>
                         ) : status === 3 ? (
                           <div className="text-center p-6 flex flex-col items-center gap-2">

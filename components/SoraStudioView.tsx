@@ -60,16 +60,19 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       
       if (data) {
         const currentStatus = Number(data.status);
-        // Kesan pelbagai nama medan peratus dari API (lebih "greedy")
+        // Robust progress detection from multiple possible field names
         const currentProgress = Number(data.status_percentage) || 
                                Number(data.progress) || 
                                Number(data.percent) || 
-                               Number(data.percentage) || 0;
+                               Number(data.percentage) || 
+                               (currentStatus === 1 ? progress + 1 : 0);
         
-        setProgress(currentProgress);
+        setProgress(Math.min(99, Math.max(progress, currentProgress)));
+
+        // Notify HistoryView to refresh its list
+        window.dispatchEvent(new CustomEvent('sync_vault_signal'));
 
         if (currentStatus === 1) {
-          // Masih memproses, tanya lagi dlm 3 saat
           pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
@@ -90,15 +93,14 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             setRenderedVideoUrl(blob);
           }
           
-          // Isyaratkan History/Vault untuk refresh automatik
-          localStorage.setItem('sync_vault', Date.now().toString());
+          window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         } else if (currentStatus === 3) {
           setIsGenerating(false);
           alert("Render gagal. Sila cuba lagi.");
+          window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         }
       }
     } catch (e) {
-      // Jika error connection, cuba lagi dlm 3 saat
       pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
     }
   };
@@ -124,9 +126,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                    response?.data?.data?.uuid;
 
       if (uuid) {
-        localStorage.setItem('last_video_uuid', uuid);
-        // Trigger sync awal supaya item 'Processing' muncul dlm vault
-        localStorage.setItem('sync_vault', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         pollStatus(uuid);
       } else {
         alert("Gagal memulakan proses. Sila semak limit hampa.");

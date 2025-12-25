@@ -8,7 +8,8 @@ declare var process: any;
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Memastikan pembolehubah persekitaran dipetakan secara literal ke dalam kod klien
+    // Memetakan seluruh objek process.env supaya lebih stabil dlm AI Studio
+    'process.env.VITE_API_KEY': JSON.stringify(process.env.VITE_API_KEY || process.env.API_KEY || ''),
     'process.env.VITE_SUPABASE_URL': JSON.stringify(process.env.VITE_SUPABASE_URL || 'https://nbhlclzejwwqozkbixkk.supabase.co'),
     'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || ''),
     'process.env.VITE_OPENAI_API_KEY': JSON.stringify(process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY || ''),
