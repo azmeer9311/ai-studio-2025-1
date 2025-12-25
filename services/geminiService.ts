@@ -15,33 +15,36 @@ export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
+  // Jika URL adalah blob, jangan ubah
+  if (cleanUrl.startsWith('blob:')) return cleanUrl;
+
   // Bina full URL jika ianya relative path
-  if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
+  if (!cleanUrl.startsWith('http')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
     cleanUrl = `${GEMINIGEN_CDN_URL}${path}`;
   }
   
-  // Bersihkan double slashes
+  // Bersihkan double slashes (kecuali after protocol)
   cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, "$1");
 
   try {
     const urlObj = new URL(cleanUrl);
-    // Masukkan key jika belum ada
-    if (!urlObj.searchParams.has('key')) {
+    // Masukkan key jika belum ada dan bukan S3 pre-signed (biasanya ada X-Amz-Signature)
+    if (!urlObj.searchParams.has('key') && !urlObj.searchParams.has('X-Amz-Signature')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
     // Cache buster untuk data paling fresh
-    urlObj.searchParams.set('_v', Date.now().toString());
+    urlObj.searchParams.set('_burst', Date.now().toString());
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_v=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_b=${Date.now()}`;
   }
 };
 
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
-  // Untuk image/thumbnail, gunakan direct authenticated URL dahulu
+  // Untuk image/thumbnail, gunakan direct authenticated URL
   return prepareAuthenticatedUrl(url);
 };
 
@@ -49,11 +52,12 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
   
+  // Cache busting for API calls
   const separator = url.includes('?') ? '&' : '?';
   const finalUrl = `${url}${separator}cb=${Date.now()}`;
 
   try {
-    // Cubaan pertama melalui proxy untuk elak CORS pada sesetengah browser
+    // Cubaan melalui proxy untuk elak CORS
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`;
     const response = await fetch(proxyUrl, { ...options, headers });
     if (!response.ok) throw new Error("Proxy Error");
@@ -72,24 +76,28 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
 }
 
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
-  if (!url) throw new Error("URL tidak sah");
+  if (!url) throw new Error("URL video tidak sah.");
   const authUrl = prepareAuthenticatedUrl(url);
   
   try {
-    const response = await fetch(authUrl, { mode: 'cors' });
+    // Cuba ambil via proxy dahulu (paling selamat untuk CORS)
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
+    const response = await fetch(proxyUrl);
+    
     if (!response.ok) {
-        // Jika direct gagal, cuba guna proxy
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
-        const proxyResp = await fetch(proxyUrl);
-        if (!proxyResp.ok) throw new Error("Gagal ambil stream video.");
-        const blob = await proxyResp.blob();
-        return URL.createObjectURL(blob);
+      // Jika proxy gagal, cuba direct
+      const directResponse = await fetch(authUrl);
+      if (!directResponse.ok) throw new Error("Video stream inaccessible.");
+      const blob = await directResponse.blob();
+      return URL.createObjectURL(blob);
     }
+
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
-    console.warn("Media fetch fallback:", e);
-    return authUrl; // Terakhir sekali, pulangkan direct URL
+    console.warn("Resilient fetch failed, falling back to direct URL:", e);
+    // Jika semua gagal, return URL yang dah ada auth key (sebagai fallback terakhir)
+    return authUrl;
   }
 };
 
@@ -109,7 +117,7 @@ export const generateSoraVideo = async (params: {
   userId: string;
 }) => {
   const allowed = await canGenerate(params.userId, 'video');
-  if (!allowed) throw new Error("Had hampa dah habis.");
+  if (!allowed) throw new Error("Had janaan anda telah tamat.");
 
   const formData = new FormData();
   formData.append('prompt', params.prompt);
@@ -133,7 +141,7 @@ export const generateSoraVideo = async (params: {
   return result;
 };
 
-// --- LOGIK DI LOCK (JANGAN USIK) ---
+// --- LOGIK DI LOCK (SISTEM STABIL) ---
 export const generateText = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
