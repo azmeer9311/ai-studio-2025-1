@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl } from '../services/geminiService';
+import { getAllHistory, getSpecificHistory, prepareAuthenticatedUrl, fetchVideoAsBlob } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
 
 interface HistoryViewProps {
@@ -17,42 +17,37 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   /**
    * Fungsi Pencarian URL Video (Deep Resolution)
-   * Mengimbas generated_video array, generate_result string, dan top-level fields.
+   * Menangani data yang kadangkala tersimpan dalam nested arrays atau JSON strings.
    */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
     
-    // 1. Periksa array generated_video (Format paling standard dari GeminiGen)
+    // 1. Periksa array generated_video (Standard GeminiGen)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
-      for (const vid of item.generated_video) {
-        const url = vid.video_url || vid.video_uri || vid.video_path || '';
-        if (url) return url;
-      }
+      const v = item.generated_video[0];
+      return v.video_url || v.video_uri || v.url || '';
     }
 
-    // 2. Periksa medan generate_result (Boleh jadi JSON string atau URL mentah)
+    // 2. Periksa medan generate_result (Sering kali mengandungi pautan video terus)
     if (item.generate_result) {
       const res = item.generate_result;
       if (typeof res === 'string') {
         if (res.startsWith('http')) return res;
         try {
           const parsed = JSON.parse(res);
-          // Jika array (contoh: [{video_url: '...'}])
           if (Array.isArray(parsed) && parsed.length > 0) {
             return parsed[0].video_url || parsed[0].video_uri || parsed[0].url || '';
           }
-          // Jika object
           return parsed.video_url || parsed.video_uri || parsed.url || '';
         } catch (e) {
-          // Jika string bukan JSON tapi mengandungi path
-          if (res.includes('.mp4') || res.includes('.mov')) return res;
+          if (res.includes('.mp4')) return res;
         }
       } else if (typeof res === 'object') {
         return res.video_url || res.video_uri || res.url || '';
       }
     }
 
-    // 3. Backup: Top level fields
+    // 3. Backup fields
     return item.video_url || item.video_uri || item.url || '';
   };
 
@@ -67,24 +62,21 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // Filter untuk tunjuk video berkaitan Sora/Veo sahaja
+        // Tapis hanya video
         const filteredItems = items.filter((item: any) => {
-          const typeStr = (item.type || '').toLowerCase();
-          const modelStr = (item.model_name || '').toLowerCase();
-          return typeStr.includes('video') || 
-                 modelStr.includes('sora') || 
-                 modelStr.includes('veo') ||
-                 (item.generated_video && item.generated_video.length > 0);
+          const type = (item.type || '').toLowerCase();
+          const model = (item.model_name || '').toLowerCase();
+          return type.includes('video') || model.includes('sora') || model.includes('veo');
         });
         
         setHistory(filteredItems);
 
-        // SYNC AGGRESIF (4S) jika ada video sedang 'Processing' (Status 1)
+        // Polling jika ada yang masih 'Processing' (status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 4000);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 5000);
         }
       } else {
         setHistory([]);
@@ -99,8 +91,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     fetchHistory(true);
-    // Auto sync global setiap 15 saat
-    const globalSync = setInterval(() => fetchHistory(false), 15000);
+    const globalSync = setInterval(() => fetchHistory(false), 20000);
     return () => {
       if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
       clearInterval(globalSync);
@@ -115,24 +106,23 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
       
-      // Jika data list tak lengkap, tarik dari detail API
+      // Jika URL tiada dalam list, tarik detail penuh
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
-        
-        // Simpan data detail ke dalam state history untuk rujukan masa depan
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
       if (url) {
-        const finalUrl = prepareAuthenticatedUrl(url);
-        setActiveVideo(prev => ({ ...prev, [uuid]: finalUrl }));
+        // Gunakan Blob fetch untuk memintas CORS pada elemen video
+        const blobUrl = await fetchVideoAsBlob(url);
+        setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("Video belum sedia atau tiada pautan ditemui.");
+        throw new Error("Pautan video tidak dijumpai.");
       }
     } catch (e: any) {
-      alert(`Preview Gagal: ${e.message}`);
+      alert(`Gagal memuatkan video: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -145,25 +135,24 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       let url = resolveVideoUrl(item);
       if (!url) {
         const details = await getSpecificHistory(uuid);
-        const detailData = details?.data || details?.result || details;
-        url = resolveVideoUrl(detailData);
+        url = resolveVideoUrl(details?.data || details?.result || details);
       }
       
       if (url) {
         const finalUrl = prepareAuthenticatedUrl(url);
-        // Gunakan anchor tag untuk trigger download terus
+        // Direct download link
         const link = document.createElement('a');
         link.href = finalUrl;
         link.target = '_blank';
-        link.download = `Sora_Video_${uuid.substring(0, 8)}.mp4`;
+        link.download = `SoraVideo_${uuid.substring(0, 8)}.mp4`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       } else {
-        alert("Pautan muat turun tidak dijumpai.");
+        alert("Video belum tersedia.");
       }
     } catch (e: any) {
-      alert(`Ralat muat turun. Sila cuba lagi.`);
+      alert(`Ralat muat turun.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -229,6 +218,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         src={prepareAuthenticatedUrl(item.thumbnail_url)} 
                         className="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 transition-all duration-700" 
                         alt="Thumbnail" 
+                        onError={(e) => (e.currentTarget.style.display = 'none')}
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950">
@@ -243,7 +233,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                             <span className="text-[9px] text-rose-500 font-black uppercase">Render Gagal</span>
                           </div>
                         ) : (
-                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
                         )}
                       </div>
                     )}
