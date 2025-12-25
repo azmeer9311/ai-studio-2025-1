@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAllHistory, getSpecificHistory, fetchVideoAsBlob, getProxiedMediaUrl } from '../services/geminiService';
 import { SoraHistoryItem, UserProfile } from '../types';
@@ -16,40 +15,41 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   
   const pollingTimerRef = useRef<number | null>(null);
   const isPlayingRef = useRef<boolean>(false);
+  const historyCacheRef = useRef<Record<string, SoraHistoryItem>>({});
 
-  // Sync ref with state for use in callbacks
+  // Monitor playback state to pause background sync
   useEffect(() => {
-    isPlayingRef.current = Object.keys(activeVideo).length > 0;
-  }, [activeVideo]);
+    isPlayingRef.current = Object.keys(activeVideo).length > 0 || Object.values(isProcessing).some(v => v);
+  }, [activeVideo, isProcessing]);
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
+    // Check generated_video array
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const v = item.generated_video[0];
-      return v.video_url || v.video_uri || v.url || '';
+      const url = v.video_url || v.video_uri || v.url;
+      if (url) return url;
     }
+    // Check generate_result field
     if (item.generate_result) {
       const res = item.generate_result;
       if (typeof res === 'string') {
         if (res.startsWith('http')) return res;
         try {
           const parsed = JSON.parse(res);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed[0].video_url || parsed[0].video_uri || parsed[0].url || '';
-          }
-          return parsed.video_url || parsed.video_uri || parsed.url || '';
-        } catch (e) {
-          if (res.includes('.mp4')) return res;
-        }
+          const url = Array.isArray(parsed) ? (parsed[0]?.video_url || parsed[0]?.url) : (parsed.video_url || parsed.url);
+          if (url) return url;
+        } catch (e) {}
       } else if (typeof res === 'object') {
-        return res.video_url || res.video_uri || res.url || '';
+        return res.video_url || res.url || '';
       }
     }
+    // Fallbacks
     return item.video_url || item.video_uri || item.url || item.file_download_url || '';
   };
 
   const fetchHistory = useCallback(async (showLoading = true) => {
-    // CRITICAL: Stop refreshing if user is currently playing a video to prevent UI jitter/loss
+    // PAUSE SYNC IF PLAYING: Avoid UI jitter and state loss during active user interaction
     if (isPlayingRef.current && !showLoading) return;
 
     if (showLoading) {
@@ -61,50 +61,56 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
-      if (Array.isArray(items)) {
+      if (Array.isArray(items) && items.length > 0) {
+        // Filter relevant Sora/Veo items
         const filteredItems = items.filter((item: any) => {
-          const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
-          const statusVal = Number(item.status);
-          
-          return type.includes('video') || 
-                 model.includes('sora') || 
-                 model.includes('veo') || 
-                 !!item.generated_video || 
-                 statusVal === 1 || 
-                 statusVal === 2;
+          const type = (item.type || '').toLowerCase();
+          return model.includes('sora') || model.includes('veo') || type.includes('video') || item.generated_video;
         });
-        
-        // STABILITY FIX: If we have data, update. If response is empty but we already had items, 
-        // DO NOT clear the history. This prevents the "sekejap ada sekejap hilang" issue.
-        if (filteredItems.length > 0 || !history.length) {
-          setHistory(filteredItems);
-        }
 
-        // AGGRESSIVE SYNC: If anything is still baking (Status 1), keep polling
-        const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
-        
+        // PERSISTENT MERGE: Update the cache and ensure items never "disappear"
+        filteredItems.forEach(item => {
+          // If we already have more details (like a resolved video URL), keep them
+          const existing = historyCacheRef.current[item.uuid];
+          if (existing && !resolveVideoUrl(item) && resolveVideoUrl(existing)) {
+            historyCacheRef.current[item.uuid] = { ...item, ...existing };
+          } else {
+            historyCacheRef.current[item.uuid] = item;
+          }
+        });
+
+        // Final list ordered by creation date
+        // Fixed: Explicitly casting Object.values result to avoid 'unknown' type inference
+        const sortedList = (Object.values(historyCacheRef.current) as SoraHistoryItem[]).sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        setHistory(sortedList);
+
+        // CONTINUOUS SYNC: If anything is "Baking" (Status 1), poll aggressively
+        // Fixed: Type inference for sortedList.some callback
+        const hasActiveTasks = sortedList.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
-        
         if (hasActiveTasks) {
           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
         }
       }
     } catch (err: any) {
-      console.error("Vault sync failed:", err);
-      if (showLoading) setError("Gagal menyegerak Vault. Sila cuba lagi.");
+      console.error("Vault retrieval sync failed:", err);
+      if (showLoading) setError("Gagal menyegerak Vault Archive.");
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [history.length]);
+  }, []);
 
   useEffect(() => {
     fetchHistory(true);
     
-    // Auto-refresh every 10s if not playing
-    const interval = setInterval(() => fetchHistory(false), 10000);
+    // Safety background refresh (Every 12s)
+    const interval = setInterval(() => fetchHistory(false), 12000);
     
-    // Listen for instant sync signal from Studio
+    // STUDIO SIGNAL: Listen for instant updates when a generation starts/ends
     const handleSync = () => fetchHistory(false);
     window.addEventListener('sync_vault_signal', handleSync);
     
@@ -123,18 +129,22 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
       
+      // If URL missing in list, fetch full details
       if (!url) {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
-        setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
+        // Save to cache and state
+        historyCacheRef.current[uuid] = { ...item, ...details };
+        // Fixed: Explicit casting to SoraHistoryItem[] to ensure created_at property is accessible
+        setHistory((Object.values(historyCacheRef.current) as SoraHistoryItem[]).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
       }
 
       if (url) {
         const blobUrl = await fetchVideoAsBlob(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("Video URL not found.");
+        throw new Error("Pautan video belum sedia atau tidak ditemui.");
       }
     } catch (e: any) {
       alert(`Gagal preview: ${e.message}`);
@@ -149,8 +159,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     try {
       let url = resolveVideoUrl(item);
       if (!url) {
-        const details = await getSpecificHistory(uuid);
-        url = resolveVideoUrl(details?.data || details?.result || details);
+        const detailsResponse = await getSpecificHistory(uuid);
+        const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
+        url = resolveVideoUrl(details);
+        historyCacheRef.current[uuid] = { ...item, ...details };
       }
       
       if (url) {
@@ -164,9 +176,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
           document.body.removeChild(link);
           window.URL.revokeObjectURL(blobUrl);
         }, 100);
+      } else {
+        alert("Video belum siap diproses.");
       }
     } catch (e: any) {
-      alert(`Ralat muat turun.`);
+      alert(`Ralat muat turun: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -193,7 +207,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'Penyelarasan...' : 'Refresh Vault'}
+            {loading ? 'MENYEGERAK...' : 'SYNC HISTORY'}
           </button>
         </header>
 
@@ -238,7 +252,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                           <img src={getProxiedMediaUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                         ) : (
                           <div className="flex flex-col items-center gap-2 opacity-20">
-                            <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
+                            <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2H5a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                             <span className="text-[8px] font-black uppercase">Tiada Thumbnail</span>
                           </div>
                         )}
@@ -267,7 +281,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         <span className="text-[8px] md:text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
                         <span className="text-[7px] text-slate-700 font-bold uppercase">{item.model_name}</span>
                       </div>
-                      <button onClick={() => handleDownload(item)} disabled={processing || status !== 2} className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all">
+                      <button onClick={() => handleDownload(item)} disabled={processing || status !== 2} className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all active:scale-90">
                          <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       </button>
                     </div>
