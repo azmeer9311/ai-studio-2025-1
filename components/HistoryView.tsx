@@ -17,22 +17,25 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
-    // Cuba ambil dari generated_video array (Standard GeminiGen API)
+    
+    // 1. Check generated_video array
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const vid = item.generated_video[0];
       return vid.video_url || vid.video_uri || '';
     }
-    // Cuba ambil dari generate_result
+
+    // 2. Check generate_result field
     if (item.generate_result) {
       if (typeof item.generate_result === 'string') {
         if (item.generate_result.startsWith('http')) return item.generate_result;
         try {
           const parsed = JSON.parse(item.generate_result);
-          if (Array.isArray(parsed)) return parsed[0]?.video_url || parsed[0]?.video_uri || '';
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed[0]?.video_url || parsed[0]?.video_uri || '';
           return parsed.video_url || parsed.video_uri || '';
         } catch (e) {}
       }
     }
+    
     return '';
   };
 
@@ -47,21 +50,19 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // SYNC LOGIC: Kita ambil semua history yang berkaitan dengan Video/Sora
-        // Kita tidak lagi filter isMine menggunakan local ID kerana API menggunakan global ID.
+        // We sync everything that looks like a video generation
         const filteredItems = items.filter((item: any) => {
           const typeStr = (item.type || '').toLowerCase();
           const modelStr = (item.model_name || '').toLowerCase();
-          const isVideo = typeStr.includes('video') || 
-                          modelStr.includes('sora') || 
-                          modelStr.includes('veo') ||
-                          (item.generated_video && item.generated_video.length > 0);
-          return isVideo;
+          return typeStr.includes('video') || 
+                 modelStr.includes('sora') || 
+                 modelStr.includes('veo') ||
+                 (item.generated_video && item.generated_video.length > 0);
         });
         
         setHistory(filteredItems);
 
-        // Jika ada yang sedang diproses, teruskan polling
+        // Polling if items are still processing
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         if (hasActiveTasks) {
@@ -71,8 +72,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         setHistory([]);
       }
     } catch (err: any) {
-      console.error("Gagal sync vault:", err);
-      if (showLoading) setError("Vault Sync Error. Sila klik Refresh semula.");
+      console.error("Sync error:", err);
+      if (showLoading) setError("Connection failed. Please check your internet and API key.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -96,7 +97,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
-        // Update local history item dengan details penuh
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
@@ -104,10 +104,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const finalUrl = prepareAuthenticatedUrl(url);
         setActiveVideo(prev => ({ ...prev, [uuid]: finalUrl }));
       } else {
-        throw new Error("Punca media tidak dijumpai.");
+        throw new Error("No media URL found.");
       }
     } catch (e: any) {
-      alert(`Preview Gagal. Sila muat turun video secara terus.`);
+      alert(`Preview Gagal: ${e.message}. Sila muat turun secara manual.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -127,7 +127,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         window.open(finalUrl, '_blank');
       }
     } catch (e: any) {
-      alert(`Muat turun gagal.`);
+      alert(`Download Error.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -166,7 +166,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
         {history.length === 0 && !loading && !error ? (
           <div className="text-center py-40 border-2 border-dashed border-slate-900 rounded-[3rem] bg-slate-900/10">
-            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Tiada media ditemui dalam rekod hampa.</p>
+            <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Tiada rekod video ditemui.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 pb-32">

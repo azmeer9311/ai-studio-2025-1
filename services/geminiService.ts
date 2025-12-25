@@ -33,13 +33,11 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 };
 
 /**
- * Fungsi fetch utama untuk bypass CORS.
- * AllOrigins digunakan secara default untuk GET bagi menjamin 'Sync' berjaya.
+ * Fungsi fetch yang sangat tahan lasak untuk memintas ralat 'Failed to fetch' (CORS).
  */
 async function robustFetch(url: string, options: RequestInit = {}) {
   const isGet = !options.method || options.method === 'GET';
   
-  // Headers wajib
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
   
@@ -47,42 +45,54 @@ async function robustFetch(url: string, options: RequestInit = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // Gunakan Proxy AllOrigins untuk GET (Sync History)
+  // Helper for direct fetch
+  const directFetch = async (targetUrl: string) => {
+    return await fetch(targetUrl, { ...options, headers });
+  };
+
+  // 1. Cuba Direct Fetch dahulu
+  try {
+    const response = await directFetch(url);
+    if (response.ok) return response;
+  } catch (e) {
+    // Silent catch for CORS issues
+  }
+
+  // 2. Cuba CorsProxy.io (Paling transparent untuk POST/GET)
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl, { ...options, headers });
+    if (response.ok) return response;
+  } catch (e) {
+    // Continue to next fallback
+  }
+
+  // 3. Cuba AllOrigins Proxy (Hanya untuk GET/History)
   if (isGet) {
     try {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
-      const response = await fetch(proxyUrl);
+      const aoUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
+      const response = await fetch(aoUrl);
       if (response.ok) {
         const data = await response.json();
         const contents = typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
         return {
           ok: true,
+          status: 200,
           json: async () => contents
         } as Response;
       }
     } catch (e) {
-      console.error("Proxy failure:", e);
+      // All fallback failed
     }
   }
 
-  // Untuk POST atau fallback
-  try {
-    const directResponse = await fetch(url, { ...options, headers });
-    if (directResponse.ok) return directResponse;
-    
-    // Fallback ke corsproxy.io jika direct gagal
-    const fallbackProxy = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    return await fetch(fallbackProxy, { ...options, headers });
-  } catch (e: any) {
-    console.error("Critical Connection Error:", e);
-    throw e;
-  }
+  throw new Error("Unable to connect to AI server. Please check your network or API limits.");
 }
 
 async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const targetUrl = endpoint.startsWith('http') ? endpoint : `${GEMINIGEN_BASE_URL}${endpoint}`;
   const response = await robustFetch(targetUrl, options);
-  if (typeof response.json === 'function') {
+  if (response && typeof response.json === 'function') {
     return await response.json();
   }
   return response;
@@ -99,7 +109,7 @@ export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
     const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
     return await fetchApi(endpoint);
   } catch (e) {
-    console.error("Vault sync failed:", e);
+    console.warn("Vault retrieval issue:", e);
     return { result: [], success: false };
   }
 };
