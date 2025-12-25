@@ -14,6 +14,12 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const [activeVideo, setActiveVideo] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
   const pollingTimerRef = useRef<number | null>(null);
+  const historyRef = useRef<SoraHistoryItem[]>([]);
+
+  // Update ref whenever history changes to allow comparison in fetch
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
@@ -48,27 +54,37 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
     
     try {
-      // Force refresh by bypassing cache with timestamp in query
+      // Fetch with cache buster in geminiService
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
-      if (Array.isArray(items)) {
-        // BROAD SYNC: Filter with high tolerance for status labels
+      if (Array.isArray(items) && items.length > 0) {
+        // BROAD SYNC: Filter with high tolerance
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
           const statusVal = Number(item.status);
           
-          const isRelevant = type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video || item.thumbnail_url;
+          const isRelevant = type.includes('video') || 
+                            model.includes('sora') || 
+                            model.includes('veo') || 
+                            !!item.generated_video || 
+                            !!item.thumbnail_url || 
+                            !!item.generate_result;
+
           const isLiveTask = statusVal === 1; // Baking
           const isFinished = statusVal === 2; // Success
           
           return isLiveTask || isRelevant || isFinished;
         });
         
-        setHistory(filteredItems);
+        // STABILITY FIX: If we have existing items and the new fetch is empty, 
+        // don't clear the state. This prevents flickering.
+        if (filteredItems.length > 0) {
+          setHistory(filteredItems);
+        }
 
-        // AGGRESSIVE SYNC: If anything is baking, poll at 1.5s frequency (matching geminigen.ai dashboard speed)
+        // AGGRESSIVE SYNC: If anything is baking, poll at 1.5s frequency
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
@@ -76,11 +92,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         if (hasActiveTasks) {
           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 1500);
         }
-      } else {
+      } else if (Array.isArray(items) && items.length === 0 && historyRef.current.length === 0) {
+        // Only clear if both are empty
         setHistory([]);
       }
     } catch (err: any) {
       console.error("Vault retrieval sync failed:", err);
+      // Don't show error if it's a background poll
       if (showLoading) setError("Penyelarasan Vault tergendala. Sila refresh manual.");
     } finally {
       if (showLoading) setLoading(false);
@@ -90,8 +108,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Background safety sync (Every 5 seconds for high performance)
-    const backgroundInterval = setInterval(() => fetchHistory(false), 5000);
+    // Background safety sync (Every 8 seconds to stay fresh without overwhelming)
+    const backgroundInterval = setInterval(() => fetchHistory(false), 8000);
     
     // MASTER SYNC: Listen for real-time broadcast from Studio
     const handleSync = () => fetchHistory(false);
@@ -116,6 +134,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         const detailsResponse = await getSpecificHistory(uuid);
         const details = detailsResponse?.data || detailsResponse?.result || detailsResponse;
         url = resolveVideoUrl(details);
+        // Only update the specific item in state to avoid global flicker
         setHistory(prev => prev.map(h => h.uuid === uuid ? { ...h, ...details } : h));
       }
 
@@ -228,7 +247,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         ) : item.thumbnail_url ? (
                           <img src={getProxiedMediaUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                         ) : (
-                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
                         )}
                       </div>
                     )}
