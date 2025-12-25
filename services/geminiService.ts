@@ -9,16 +9,12 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menambah 'key' dan cache-buster ke dalam URL untuk media.
+ * Memastikan URL sentiasa sah untuk download dan preview.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
   let cleanUrl = url.trim();
   
-  // Jika sudah ada signature S3, jangan kacau
-  if (cleanUrl.includes('X-Amz-Signature') || cleanUrl.includes('X-Amz-Algorithm')) {
-    return cleanUrl;
-  }
-
   // Bina full URL jika ianya relative path
   if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('blob:')) {
     const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
@@ -30,40 +26,41 @@ export const prepareAuthenticatedUrl = (url: string): string => {
 
   try {
     const urlObj = new URL(cleanUrl);
+    // Masukkan key jika belum ada
     if (!urlObj.searchParams.has('key')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
-    // Deep cache buster
-    urlObj.searchParams.set('_burst', Date.now().toString());
+    // Cache buster untuk data paling fresh
+    urlObj.searchParams.set('_v', Date.now().toString());
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_burst=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_v=${Date.now()}`;
   }
 };
 
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
-  const authUrl = prepareAuthenticatedUrl(url);
-  return `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
+  // Untuk image/thumbnail, gunakan direct authenticated URL dahulu
+  return prepareAuthenticatedUrl(url);
 };
 
 async function robustFetch(url: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
-  headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-  headers.set('Pragma', 'no-cache');
   
   const separator = url.includes('?') ? '&' : '?';
-  const timestampedUrl = `${url}${separator}nocache=${Date.now()}`;
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(timestampedUrl)}`;
+  const finalUrl = `${url}${separator}cb=${Date.now()}`;
 
   try {
+    // Cubaan pertama melalui proxy untuk elak CORS pada sesetengah browser
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`;
     const response = await fetch(proxyUrl, { ...options, headers });
-    if (!response.ok) throw new Error("Proxy failed");
+    if (!response.ok) throw new Error("Proxy Error");
     return response;
   } catch (e) {
-    return await fetch(timestampedUrl, { ...options, headers });
+    // Fallback terus ke API jika proxy ralat
+    return await fetch(finalUrl, { ...options, headers });
   }
 }
 
@@ -79,26 +76,29 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   const authUrl = prepareAuthenticatedUrl(url);
   
   try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
-    const response = await fetch(proxyUrl, { 
-      headers: { 'Cache-Control': 'no-cache' } 
-    });
-    if (!response.ok) throw new Error("Gagal ambil media stream.");
+    const response = await fetch(authUrl, { mode: 'cors' });
+    if (!response.ok) {
+        // Jika direct gagal, cuba guna proxy
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
+        const proxyResp = await fetch(proxyUrl);
+        if (!proxyResp.ok) throw new Error("Gagal ambil stream video.");
+        const blob = await proxyResp.blob();
+        return URL.createObjectURL(blob);
+    }
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
-    console.warn("Proxy blob failed, using direct authenticated URL:", e);
-    return authUrl;
+    console.warn("Media fetch fallback:", e);
+    return authUrl; // Terakhir sekali, pulangkan direct URL
   }
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
-  const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&t=${Date.now()}`;
-  return await fetchApi(endpoint);
+  return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`);
 };
 
 export const getSpecificHistory = async (uuid: string) => {
-  return fetchApi(`/history/${uuid}?t=${Date.now()}`);
+  return await fetchApi(`/history/${uuid}`);
 };
 
 export const generateSoraVideo = async (params: {

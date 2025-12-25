@@ -31,14 +31,15 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
   const isLocked = !userProfile.is_admin && (!userProfile.is_approved || userProfile.video_limit <= 0);
 
-  // Resume tracking logic: If the user refreshes but a job is still processing in the API history
+  // Track the most recent active job from the API to prevent "hilang" status
   useEffect(() => {
     const resumeTracking = async () => {
       try {
         const historyData = await getAllHistory(1, 10);
         const items = historyData?.result || historyData?.data || [];
         const bakingItem = items.find((i: any) => Number(i.status) === 1);
-        if (bakingItem) {
+        
+        if (bakingItem && !isGenerating) {
           setIsGenerating(true);
           setActiveUuid(bakingItem.uuid);
           pollStatus(bakingItem.uuid);
@@ -73,29 +74,26 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
   const pollStatus = async (uuid: string) => {
     try {
-      // Force immediate check without any cached result
       const response = await getSpecificHistory(uuid);
       const data = response?.data || response?.result || (response?.uuid ? response : null);
       
       if (data) {
         const currentStatus = Number(data.status);
         
-        // ACCURATE PERCENTAGE: Always use what the server says first.
         const apiProgress = Number(data.status_percentage) || 
                            Number(data.progress) || 
                            Number(data.percent) || 
-                           Number(data.percentage);
+                           Number(data.percentage) || 0;
         
+        // Stabilize progress rendering
         const currentProgress = apiProgress > 0 ? apiProgress : (currentStatus === 1 ? Math.min(99, progress + 1) : 0);
-        
         setProgress(Math.floor(currentProgress));
 
-        // MASTER BROADCAST: Keep Vault Archive in perfect sync with the Studio
-        window.dispatchEvent(new CustomEvent('sync_vault_signal', { detail: { uuid, status: currentStatus, progress: currentProgress } }));
+        // Sync signal to Vault
+        window.dispatchEvent(new CustomEvent('sync_vault_signal'));
 
         if (currentStatus === 1) {
-          // Poll every 1.5 seconds for peak synchronization performance
-          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 1500);
+          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 2500);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
           setActiveUuid(null);
@@ -115,26 +113,27 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             const blob = await fetchVideoAsBlob(videoUrl);
             setRenderedVideoUrl(blob);
           }
-          
-          // Final sync notification
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         } else if (currentStatus === 3) {
           setIsGenerating(false);
           setActiveUuid(null);
-          alert("Render video hampa gagal. Sila cuba lagi.");
+          alert("Janaan video gagal di server. Sila cuba lagi.");
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         }
+      } else {
+         // Data momentary null, retry faster
+         pollingRef.current = window.setTimeout(() => pollStatus(uuid), 1500);
       }
     } catch (e) {
-      // Retry faster on connection blips
-      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 2000);
+      // API momentary error, wait and retry
+      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
     }
   };
 
   const handleGenerate = async () => {
-    if (isLocked || !prompt.trim()) return;
+    if (isLocked || !prompt.trim() || isGenerating) return;
     setIsGenerating(true);
-    setProgress(1); // Visual start
+    setProgress(1); 
     setRenderedVideoUrl(null);
     try {
       const response = await generateSoraVideo({
@@ -156,19 +155,19 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         pollStatus(uuid);
       } else {
-        alert("Gagal memulakan enjin Sora. Sila cuba sekejap lagi.");
+        alert("Enjin Sora tidak memulangkan UUID. Cuba refresh page.");
         setIsGenerating(false);
       }
     } catch (error: any) {
       setIsGenerating(false);
-      alert(error.message || "Sora generation failed.");
+      alert(error.message || "Sora generation request failed.");
     }
   };
 
   const handleMagicGenerate = async () => {
     if (isLocked) return;
     if (!prompt.trim()) {
-      alert("Hampa kena taip sikit pasal produk hampa kat dalam kotak prompt tu dulu.");
+      alert("Masukkan huraian produk hampa dulu.");
       return;
     }
     setIsWizardLoading(true);
@@ -182,7 +181,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       setDuration(15);
       if (wizardPlatform === 'tiktok') setAspectRatio('portrait');
     } catch (error: any) {
-      alert("Gagal hubungi OpenAI: " + error.message);
+      alert("Ralat OpenAI: " + error.message);
     } finally {
       setIsWizardLoading(false);
     }
@@ -207,7 +206,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         {isLocked && (
           <div className="mb-6 p-4 md:p-6 bg-rose-500/10 border border-rose-500/20 rounded-2xl md:rounded-3xl text-center">
             <p className="text-[8px] md:text-[10px] font-black text-rose-500 uppercase tracking-widest">
-              AKSES TERHAD: Sila tunggu kelulusan Admin sebelum boleh jana video.
+              AKSES TERHAD: Sila tunggu kelulusan Admin.
             </p>
           </div>
         )}
@@ -298,8 +297,8 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    disabled={isLocked}
-                    placeholder="Contoh: 'Shooting video seorang wanita guna tudung bawal dalam bilik pencahayaan cinematic'..."
+                    disabled={isLocked || isGenerating}
+                    placeholder="Describe your product here..."
                     className="w-full h-32 md:h-44 bg-slate-950/80 border border-slate-800 rounded-2xl p-4 md:p-5 text-[11px] md:text-xs text-slate-200 outline-none focus:border-cyan-500/50 transition-all resize-none custom-scrollbar font-medium leading-relaxed"
                   />
                 </div>
@@ -354,15 +353,6 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
                 </div>
               )}
             </div>
-            
-            {renderedVideoUrl && (
-              <div className="mt-6 md:mt-8 w-full flex justify-center px-4">
-                <button onClick={() => onViewChange?.(AppView.HISTORY)} className="w-full md:w-auto px-10 py-4 rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 text-[9px] font-black uppercase tracking-widest hover:text-white transition-all flex items-center justify-center gap-3">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  Tengok Rekod Vault
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
