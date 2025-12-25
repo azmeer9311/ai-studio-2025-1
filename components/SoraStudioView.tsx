@@ -73,28 +73,29 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
   const pollStatus = async (uuid: string) => {
     try {
+      // Force immediate check without any cached result
       const response = await getSpecificHistory(uuid);
       const data = response?.data || response?.result || (response?.uuid ? response : null);
       
       if (data) {
         const currentStatus = Number(data.status);
         
-        // Priority progress detection: Prefer API fields over local increments
+        // ACCURATE PERCENTAGE: Always use what the server says first.
         const apiProgress = Number(data.status_percentage) || 
                            Number(data.progress) || 
                            Number(data.percent) || 
                            Number(data.percentage);
         
-        const currentProgress = apiProgress || (currentStatus === 1 ? Math.min(99, progress + 2) : 0);
+        const currentProgress = apiProgress > 0 ? apiProgress : (currentStatus === 1 ? Math.min(99, progress + 1) : 0);
         
         setProgress(Math.floor(currentProgress));
 
-        // BROADCAST: Immediately signal HistoryView to refresh its data with the latest from API
+        // MASTER BROADCAST: Keep Vault Archive in perfect sync with the Studio
         window.dispatchEvent(new CustomEvent('sync_vault_signal', { detail: { uuid, status: currentStatus, progress: currentProgress } }));
 
         if (currentStatus === 1) {
-          // Poll every 2 seconds for high-speed synchronization
-          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 2000);
+          // Poll every 1.5 seconds for peak synchronization performance
+          pollingRef.current = window.setTimeout(() => pollStatus(uuid), 1500);
         } else if (currentStatus === 2) {
           setIsGenerating(false);
           setActiveUuid(null);
@@ -115,7 +116,7 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
             setRenderedVideoUrl(blob);
           }
           
-          // Final sync signal to ensure Vault shows the finished item
+          // Final sync notification
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         } else if (currentStatus === 3) {
           setIsGenerating(false);
@@ -125,14 +126,15 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         }
       }
     } catch (e) {
-      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 3000);
+      // Retry faster on connection blips
+      pollingRef.current = window.setTimeout(() => pollStatus(uuid), 2000);
     }
   };
 
   const handleGenerate = async () => {
     if (isLocked || !prompt.trim()) return;
     setIsGenerating(true);
-    setProgress(0);
+    setProgress(1); // Visual start
     setRenderedVideoUrl(null);
     try {
       const response = await generateSoraVideo({

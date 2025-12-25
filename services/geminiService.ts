@@ -30,12 +30,12 @@ export const prepareAuthenticatedUrl = (url: string): string => {
     if (!urlObj.searchParams.has('key')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
-    // Add cache buster to media URLs too
-    urlObj.searchParams.set('_cb', Date.now().toString());
+    // Deep cache buster for media URLs
+    urlObj.searchParams.set('_burst', Date.now().toString() + Math.random());
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_cb=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_burst=${Date.now()}`;
   }
 };
 
@@ -46,13 +46,18 @@ export const getProxiedMediaUrl = (url: string): string => {
 };
 
 async function robustFetch(url: string, options: RequestInit = {}) {
-  // CRITICAL: Add cache-buster to the base URL BEFORE proxying to ensure we hit geminigen.ai fresh
+  // CRITICAL: Double-layer cache busting for both proxy and browser
   const separator = url.includes('?') ? '&' : '?';
-  const timestampedUrl = `${url}${separator}t=${Date.now()}`;
+  const timestampedUrl = `${url}${separator}nocache=${Date.now()}_${Math.random()}`;
   const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(timestampedUrl)}`;
   
   const headers = new Headers(options.headers || {});
   headers.set('x-api-key', GEMINIGEN_KEY);
+  
+  // Force browser to bypass local cache
+  headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  headers.set('Pragma', 'no-cache');
+  headers.set('Expires', '0');
   
   const isGet = !options.method || options.method === 'GET';
   if (!isGet && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -61,10 +66,10 @@ async function robustFetch(url: string, options: RequestInit = {}) {
 
   try {
     const response = await fetch(proxyUrl, { ...options, headers });
-    if (!response.ok) throw new Error("Proxy error");
+    if (!response.ok) throw new Error("Proxy connection issue");
     return response;
   } catch (e) {
-    // Fallback if proxy fails
+    // Immediate fallback with fresh timestamp
     return await fetch(timestampedUrl, { ...options, headers });
   }
 }
@@ -82,28 +87,31 @@ export const fetchVideoAsBlob = async (url: string): Promise<string> => {
   
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
-    const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error("Gagal memuat turun data media dari server.");
+    const response = await fetch(proxyUrl, { 
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } 
+    });
+    if (!response.ok) throw new Error("Gagal muat turun media.");
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   } catch (e) {
-    console.warn("Ralat fetch Blob, guna URL asal:", e);
+    console.warn("Blob fetch failed, using direct URL:", e);
     return authUrl;
   }
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
   try {
-    const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}`;
+    // Force absolute latest from server by bypassing all layers
+    const endpoint = `/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&sync_req=${Date.now()}`;
     return await fetchApi(endpoint);
   } catch (e) {
-    console.error("Vault retrieval issue:", e);
+    console.error("Vault retrieval error:", e);
     return { result: [], success: false };
   }
 };
 
 export const getSpecificHistory = async (uuid: string) => {
-  return fetchApi(`/history/${uuid}`);
+  return fetchApi(`/history/${uuid}?check=${Date.now()}`);
 };
 
 export const generateSoraVideo = async (params: {

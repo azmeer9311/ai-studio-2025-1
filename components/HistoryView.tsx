@@ -48,40 +48,40 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     }
     
     try {
-      // Fetch latest 100 items to ensure all recent generations are captured
+      // Force refresh by bypassing cache with timestamp in query
       const response = await getAllHistory(1, 100); 
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // BROAD FILTER: Include anything that looks like a video or is currently processing
+        // BROAD SYNC: Filter with high tolerance for status labels
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
-          const isSoraVideo = type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video;
           const statusVal = Number(item.status);
-          const isProcessing = statusVal === 1;
-          const isCompleted = statusVal === 2;
-          const isFailed = statusVal === 3;
-          return isProcessing || isSoraVideo || isCompleted || isFailed;
+          
+          const isRelevant = type.includes('video') || model.includes('sora') || model.includes('veo') || item.generated_video || item.thumbnail_url;
+          const isLiveTask = statusVal === 1; // Baking
+          const isFinished = statusVal === 2; // Success
+          
+          return isLiveTask || isRelevant || isFinished;
         });
         
         setHistory(filteredItems);
 
-        // SYNC: Poll aggressively every 2 seconds if any video is BAKING (Status 1)
+        // AGGRESSIVE SYNC: If anything is baking, poll at 1.5s frequency (matching geminigen.ai dashboard speed)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          // Rapid refresh to match geminigen.ai speed
-          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
+          pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 1500);
         }
       } else {
         setHistory([]);
       }
     } catch (err: any) {
-      console.error("Vault retrieval failed:", err);
-      if (showLoading) setError("Connection failed. Sila refresh manual Vault hampa.");
+      console.error("Vault retrieval sync failed:", err);
+      if (showLoading) setError("Penyelarasan Vault tergendala. Sila refresh manual.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -90,10 +90,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Safety sync every 10s to catch external updates from geminigen.ai
-    const backgroundInterval = setInterval(() => fetchHistory(false), 10000);
+    // Background safety sync (Every 5 seconds for high performance)
+    const backgroundInterval = setInterval(() => fetchHistory(false), 5000);
     
-    // LISTEN for signals from SoraStudioView when polling occurs there
+    // MASTER SYNC: Listen for real-time broadcast from Studio
     const handleSync = () => fetchHistory(false);
     window.addEventListener('sync_vault_signal', handleSync);
     
@@ -184,7 +184,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'Penyelarasan...' : 'Refresh Vault'}
+            {loading ? 'Menyegerak...' : 'Sync History'}
           </button>
         </header>
 
@@ -228,7 +228,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                         ) : item.thumbnail_url ? (
                           <img src={getProxiedMediaUrl(item.thumbnail_url)} className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-700" alt="Thumbnail" />
                         ) : (
-                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
+                          <svg className="w-10 h-10 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                         )}
                       </div>
                     )}
