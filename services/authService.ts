@@ -1,71 +1,49 @@
 
 import { UserProfile } from '../types';
+import { supabase } from '../lib/supabase';
 
-const USERS_KEY = 'azmeer_studio_users';
 const SESSION_KEY = 'azmeer_studio_session';
 
-// Kredential Admin Master
-const ADMIN_ID = 'azmeer93';
-const ADMIN_PW = 'Azm93112@';
-
 /**
- * Inisialisasi Data Pengguna (Tempatan)
- */
-const getLocalUsers = (): UserProfile[] => {
-  const stored = localStorage.getItem(USERS_KEY);
-  if (!stored) {
-    const initialAdmin: UserProfile = {
-      id: 'admin-uuid-001',
-      username: ADMIN_ID,
-      email: `${ADMIN_ID}@azmeer.ai`,
-      phone: '0123456789', // Default admin phone
-      password: ADMIN_PW,
-      is_approved: true,
-      is_admin: true,
-      video_limit: 999999,
-      image_limit: 999999,
-      videos_used: 0,
-      images_used: 0,
-      created_at: new Date().toISOString()
-    };
-    localStorage.setItem(USERS_KEY, JSON.stringify([initialAdmin]));
-    return [initialAdmin];
-  }
-  return JSON.parse(stored);
-};
-
-const saveLocalUsers = (users: UserProfile[]) => {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-};
-
-/**
- * Sistem Login
+ * Sistem Login - Sekarang menggunakan Supabase
  */
 export const loginLocal = async (userId: string, password: string): Promise<UserProfile> => {
-  const users = getLocalUsers();
-  const user = users.find(u => u.username.toLowerCase() === userId.toLowerCase() && u.password === password);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('username', userId)
+    .eq('password', password)
+    .single();
   
-  if (!user) throw new Error("ID atau Kata Laluan hampa salah.");
+  if (error || !data) {
+    throw new Error("ID atau Kata Laluan hampa salah.");
+  }
   
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-  return user;
+  const profile = data as UserProfile;
+  localStorage.setItem(SESSION_KEY, JSON.stringify(profile));
+  return profile;
 };
 
 /**
- * Sistem Sign Up (Wajib letak No Phone)
+ * Sistem Sign Up - Sekarang simpan ke Supabase
  */
 export const signupLocal = async (userId: string, email: string, password: string, phone: string): Promise<UserProfile> => {
-  const users = getLocalUsers();
-  
-  if (users.find(u => u.username.toLowerCase() === userId.toLowerCase())) {
+  // Check if username exists
+  const { data: existingUser } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('username', userId)
+    .single();
+
+  if (existingUser) {
     throw new Error("ID ni dah ada orang guna. Sila pilih ID lain.");
   }
 
-  const newUser: UserProfile = {
+  const newUser: Partial<UserProfile> = {
     id: `user-${Date.now()}`,
     username: userId,
     email: email,
-    phone: phone, // Medan wajib baru
+    phone: phone,
     password: password,
     is_approved: false,
     is_admin: false,
@@ -76,57 +54,79 @@ export const signupLocal = async (userId: string, email: string, password: strin
     created_at: new Date().toISOString()
   };
 
-  const updatedUsers = [...users, newUser];
-  saveLocalUsers(updatedUsers);
-  return newUser;
+  const { data, error } = await supabase
+    .from('profiles')
+    .insert([newUser])
+    .select()
+    .single();
+
+  if (error) throw new Error("Gagal mendaftar ke database: " + error.message);
+  
+  return data as UserProfile;
 };
 
 /**
- * Logout
+ * Logout - Buang session sahaja
  */
 export const logoutLocal = () => {
   localStorage.removeItem(SESSION_KEY);
 };
 
 /**
- * Ambil Session Semasa
+ * Ambil Session Semasa (Sync untuk UI speed, Data Async disinkronkan)
  */
 export const getCurrentSession = (): UserProfile | null => {
   const session = localStorage.getItem(SESSION_KEY);
   if (!session) return null;
-  
-  const sessionUser = JSON.parse(session) as UserProfile;
-  const users = getLocalUsers();
-  const latestUser = users.find(u => u.id === sessionUser.id);
-  
-  return latestUser || null;
+  return JSON.parse(session) as UserProfile;
 };
 
+/**
+ * Ambil Profile terkini dari DB
+ */
 export const getProfile = async (userId: string): Promise<UserProfile | null> => {
-  const users = getLocalUsers();
-  return users.find(u => u.id === userId) || null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+    
+  if (error) return null;
+  return data as UserProfile;
 };
 
+/**
+ * Update penggunaan kredit (Video/Image)
+ */
 export const updateUsage = async (userId: string, type: 'video' | 'image') => {
-  const users = getLocalUsers();
-  const updatedUsers = users.map(u => {
-    if (u.id === userId) {
-      return {
-        ...u,
-        videos_used: type === 'video' ? u.videos_used + 1 : u.videos_used,
-        images_used: type === 'image' ? u.images_used + 1 : u.images_used
-      };
+  const currentProfile = await getProfile(userId);
+  if (!currentProfile) return;
+
+  const updates = {
+    videos_used: type === 'video' ? currentProfile.videos_used + 1 : currentProfile.videos_used,
+    images_used: type === 'image' ? currentProfile.images_used + 1 : currentProfile.images_used
+  };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (!error && data) {
+    // Kemaskini local session jika user yang sedang login adalah yang di-update
+    const session = getCurrentSession();
+    if (session && session.id === userId) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(data));
     }
-    return u;
-  });
-  saveLocalUsers(updatedUsers);
+  }
 };
 
 export const canGenerate = async (userId: string, type: 'video' | 'image'): Promise<boolean> => {
   const user = await getProfile(userId);
   if (!user) return false;
   if (user.is_admin) return true;
-  
   if (!user.is_approved) return false;
   
   if (type === 'video') return user.videos_used < user.video_limit;
@@ -137,17 +137,29 @@ export const canGenerate = async (userId: string, type: 'video' | 'image'): Prom
  * Admin Dashboard Services
  */
 export const getAllProfiles = async (): Promise<UserProfile[]> => {
-  return getLocalUsers();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+    
+  if (error) return [];
+  return data as UserProfile[];
 };
 
 export const updateProfileAdmin = async (userId: string, updates: Partial<UserProfile>) => {
-  const users = getLocalUsers();
-  const updatedUsers = users.map(u => u.id === userId ? { ...u, ...updates } : u);
-  saveLocalUsers(updatedUsers);
+  const { error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId);
+    
+  if (error) throw error;
 };
 
 export const deleteProfileAdmin = async (userId: string) => {
-  const users = getLocalUsers();
-  const filtered = users.filter(u => u.id !== userId);
-  saveLocalUsers(filtered);
+  const { error } = await supabase
+    .from('profiles')
+    .delete()
+    .eq('id', userId);
+    
+  if (error) throw error;
 };
