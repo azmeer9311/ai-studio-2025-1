@@ -9,7 +9,7 @@ const GEMINIGEN_CDN_URL = 'https://cdn.geminigen.ai';
 
 /**
  * Menambah 'key' dan cache-buster ke dalam URL untuk media.
- * Menggunakan timestamp berketepatan tinggi untuk memastikan browser refresh link baru.
+ * Menggunakan timestamp berketepatan tinggi dan random seed untuk memastikan browser sentiasa refresh link baru.
  */
 export const prepareAuthenticatedUrl = (url: string): string => {
   if (!url) return '';
@@ -31,17 +31,19 @@ export const prepareAuthenticatedUrl = (url: string): string => {
     if (!urlObj.searchParams.has('key') && !urlObj.searchParams.has('X-Amz-Signature')) {
       urlObj.searchParams.set('key', GEMINIGEN_KEY);
     }
-    // Force refresh dengan unique ID
-    urlObj.searchParams.set('_f', Date.now().toString() + Math.random().toString(36).substring(7));
+    // Force refresh dengan unique ID yang lebih agresif
+    urlObj.searchParams.set('_ts', Date.now().toString());
+    urlObj.searchParams.set('_nonce', Math.random().toString(36).substring(7));
     return urlObj.toString();
   } catch (e) {
     const sep = cleanUrl.includes('?') ? '&' : '?';
-    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_f=${Date.now()}`;
+    return `${cleanUrl}${sep}key=${GEMINIGEN_KEY}&_ts=${Date.now()}`;
   }
 };
 
 export const getProxiedMediaUrl = (url: string): string => {
   if (!url) return '';
+  // Untuk image/thumbnail kita masih guna auth URL
   return prepareAuthenticatedUrl(url);
 };
 
@@ -50,7 +52,7 @@ async function robustFetch(url: string, options: RequestInit = {}) {
   headers.set('x-api-key', GEMINIGEN_KEY);
   
   const separator = url.includes('?') ? '&' : '?';
-  const finalUrl = `${url}${separator}request_id=${Date.now()}`;
+  const finalUrl = `${url}${separator}request_fresh=${Date.now()}`;
 
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`;
@@ -69,36 +71,45 @@ async function fetchApi(endpoint: string, options: RequestInit = {}) {
   return await response.json();
 }
 
+/**
+ * Fetch video content as a blob with maximum resilience.
+ * Ini memastikan preview dan download sentiasa stabil.
+ */
 export const fetchVideoAsBlob = async (url: string): Promise<string> => {
-  if (!url) throw new Error("URL video kosong.");
+  if (!url) throw new Error("URL video tidak sah.");
   const authUrl = prepareAuthenticatedUrl(url);
   
   try {
-    // Gunakan CORS Proxy untuk mengelakkan sekatan download dari CDN yang berbeza
+    // Strategy 1: Proxy Fetch (Best for CORS)
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(authUrl)}`;
     const response = await fetch(proxyUrl);
     
-    if (!response.ok) {
-      const directResponse = await fetch(authUrl);
-      if (!directResponse.ok) throw new Error("Server media tidak memberi respon.");
+    if (response.ok) {
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    }
+    
+    // Strategy 2: Direct Fetch
+    const directResponse = await fetch(authUrl);
+    if (directResponse.ok) {
       const blob = await directResponse.blob();
       return URL.createObjectURL(blob);
     }
 
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    throw new Error("Gagal mengambil data video dari semua sumber.");
   } catch (e) {
-    console.warn("Fetch video fallback logic triggered.");
+    console.error("Fetch Video Failed:", e);
+    // Fallback terakhir: Return direct URL yang ada auth key
     return authUrl; 
   }
 };
 
 export const getAllHistory = async (page = 1, itemsPerPage = 100) => {
-  return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&t=${Date.now()}`);
+  return await fetchApi(`/histories?filter_by=all&items_per_page=${itemsPerPage}&page=${page}&refresh=${Date.now()}`);
 };
 
 export const getSpecificHistory = async (uuid: string) => {
-  return await fetchApi(`/history/${uuid}?t=${Date.now()}`);
+  return await fetchApi(`/history/${uuid}?fresh=true&t=${Date.now()}`);
 };
 
 export const generateSoraVideo = async (params: {
@@ -109,7 +120,7 @@ export const generateSoraVideo = async (params: {
   userId: string;
 }) => {
   const allowed = await canGenerate(params.userId, 'video');
-  if (!allowed) throw new Error("Limit janaan anda sudah habis.");
+  if (!allowed) throw new Error("Had janaan tamat.");
 
   const formData = new FormData();
   formData.append('prompt', params.prompt);
@@ -133,7 +144,7 @@ export const generateSoraVideo = async (params: {
   return result;
 };
 
-// --- LOCKED LOGIC (SISTEM STABIL) ---
+// --- LOCKED SYSTEMS (DO NOT MODIFY) ---
 export const generateText = async (prompt: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({

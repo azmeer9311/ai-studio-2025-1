@@ -17,39 +17,44 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   const pollingTimerRef = useRef<number | null>(null);
   const isPlayingRef = useRef<boolean>(false);
   
-  // MASTER CACHE: Menghalang item dari "hilang" (Persistent Map)
+  // MASTER CACHE: Menghalang item dari "hilang" dari paparan
   const masterHistoryRef = useRef<Map<string, SoraHistoryItem>>(new Map());
 
   useEffect(() => {
     isPlayingRef.current = Object.keys(activeVideo).length > 0 || Object.values(isProcessing).some(v => v);
   }, [activeVideo, isProcessing]);
 
+  /**
+   * Logic yang diperketatkan untuk mencari URL SEBENAR video (bukan thumbnail).
+   */
   const resolveVideoUrl = (item: any): string => {
     if (!item) return '';
     
-    // Check generated_video array
+    // 1. Check generated_video array (Prioriti Tertinggi)
     if (item.generated_video && Array.isArray(item.generated_video) && item.generated_video.length > 0) {
       const v = item.generated_video[0];
       const url = v.video_url || v.video_uri || v.url;
-      if (url) return url;
+      if (url && !url.includes('thumb')) return url;
     }
     
-    // Check generate_result field
+    // 2. Check generate_result JSON structure
     if (item.generate_result) {
       const res = item.generate_result;
-      if (typeof res === 'string') {
-        if (res.startsWith('http')) return res;
-        try {
-          const parsed = JSON.parse(res);
-          const url = Array.isArray(parsed) ? (parsed[0]?.video_url || parsed[0]?.url) : (parsed.video_url || parsed.url);
-          if (url) return url;
-        } catch (e) {}
-      } else if (typeof res === 'object') {
-        return res.video_url || res.url || '';
+      if (typeof res === 'string' && res.startsWith('http') && !res.includes('thumb')) {
+        return res;
       }
+      try {
+        const parsed = typeof res === 'string' ? JSON.parse(res) : res;
+        const url = Array.isArray(parsed) ? (parsed[0]?.video_url || parsed[0]?.url) : (parsed.video_url || parsed.url);
+        if (url && !url.includes('thumb')) return url;
+      } catch (e) {}
     }
     
-    return item.video_url || item.video_uri || item.url || item.file_download_url || '';
+    // 3. Check direct fields
+    const directUrl = item.video_url || item.video_uri || item.url || item.file_download_url;
+    if (directUrl && !directUrl.includes('thumb')) return directUrl;
+    
+    return '';
   };
 
   const syncHistory = useCallback(async (showLoading = true) => {
@@ -65,42 +70,46 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // RECONCILIATION: Merge data baru ke dalam master cache
+        // RECONCILIATION: Merge data baru ke dalam master cache secara selamat
         items.forEach((item: any) => {
           const model = (item.model_name || '').toLowerCase();
           const type = (item.type || '').toLowerCase();
           
           if (model.includes('sora') || model.includes('veo') || type.includes('video') || item.generated_video) {
             const existing = masterHistoryRef.current.get(item.uuid);
+            const freshUrl = resolveVideoUrl(item);
+            
             if (existing) {
               masterHistoryRef.current.set(item.uuid, { 
                 ...existing, 
                 ...item,
-                video_url: resolveVideoUrl(item) || resolveVideoUrl(existing) || existing.video_url
+                video_url: freshUrl || resolveVideoUrl(existing) || existing.video_url
               });
             } else {
-              masterHistoryRef.current.set(item.uuid, item);
+              masterHistoryRef.current.set(item.uuid, {
+                ...item,
+                video_url: freshUrl
+              });
             }
           }
         });
 
-        // Fix: Explicitly cast Array.from result to SoraHistoryItem[] to prevent 'unknown[]' type error
         const sortedList: SoraHistoryItem[] = (Array.from(masterHistoryRef.current.values()) as SoraHistoryItem[]).sort((a: SoraHistoryItem, b: SoraHistoryItem) => 
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
         setHistory(sortedList);
 
-        // Agresif polling jika ada baking
+        // Polling agresif jika ada status "Baking"
         const hasActiveTasks = sortedList.some((item: SoraHistoryItem) => Number(item.status) === 1);
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         if (hasActiveTasks) {
-          pollingTimerRef.current = window.setTimeout(() => syncHistory(false), 3000);
+          pollingTimerRef.current = window.setTimeout(() => syncHistory(false), 3500);
         }
       }
     } catch (err: any) {
       console.error("Vault Error:", err);
-      if (showLoading) setError("Masalah sambungan Vault Archive.");
+      if (showLoading) setError("Vault Archive gagal disegerakkan.");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -108,7 +117,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
 
   useEffect(() => {
     syncHistory(true);
-    const interval = setInterval(() => syncHistory(false), 12000);
+    const interval = setInterval(() => syncHistory(false), 15000);
     const handleSyncSignal = () => syncHistory(false);
     window.addEventListener('sync_vault_signal', handleSyncSignal);
     return () => {
@@ -118,56 +127,64 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
     };
   }, [syncHistory]);
 
+  /**
+   * PLAYBACK: Sentiasa ambil pautan terbaru dari API sebelum preview.
+   */
   const handlePlay = async (item: SoraHistoryItem) => {
     const uuid = item.uuid;
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
-      // FORCE FRESH FETCH: Sentiasa ambil data terbaru sebelum play untuk elakkan link expired
+      // 1. FORCE RE-FETCH: Dapatkan state terkini dari DB
       const details = await getSpecificHistory(uuid);
       const freshData = details?.data || details?.result || details;
       const freshUrl = resolveVideoUrl(freshData);
       
-      // Update cache
+      // 2. Update local cache immediately
       masterHistoryRef.current.set(uuid, { ...item, ...freshData, video_url: freshUrl });
 
       if (freshUrl) {
+        // 3. Fetch as blob for stable preview
         const blobUrl = await fetchVideoAsBlob(freshUrl);
         setActiveVideo(prev => ({ ...prev, [uuid]: blobUrl }));
       } else {
-        throw new Error("URL video tidak ditemui.");
+        throw new Error("Pautan video gagal dijana oleh server.");
       }
     } catch (e: any) {
-      alert(`Gagal preview: ${e.message}`);
+      alert(`Preview Gagal: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
   };
 
+  /**
+   * DOWNLOAD: Sentiasa refresh pautan sebelum muat turun.
+   */
   const handleDownload = async (item: SoraHistoryItem) => {
     const uuid = item.uuid;
     setIsProcessing(prev => ({ ...prev, [uuid]: true }));
     try {
-      // FORCE FRESH FETCH: Ambil link paling baru untuk download
+      // 1. FORCE RE-FETCH: Dapatkan pautan muat turun paling fresh
       const details = await getSpecificHistory(uuid);
       const freshData = details?.data || details?.result || details;
       const freshUrl = resolveVideoUrl(freshData);
       
       if (freshUrl) {
+        // 2. Muat turun menggunakan blob strategy
         const blobUrl = await fetchVideoAsBlob(freshUrl);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.setAttribute('download', `Sora_${uuid.substring(0, 5)}.mp4`);
+        link.setAttribute('download', `Video_${uuid.substring(0, 5)}.mp4`);
         document.body.appendChild(link);
         link.click();
         setTimeout(() => {
           document.body.removeChild(link);
           if (blobUrl.startsWith('blob:')) window.URL.revokeObjectURL(blobUrl);
-        }, 300);
+        }, 500);
       } else {
-        alert("Video belum sedia diproses.");
+        alert("Server belum menyiapkan pautan muat turun.");
       }
     } catch (e: any) {
-      alert(`Muat turun ralat: ${e.message}`);
+      alert(`Muat Turun Ralat: ${e.message}`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -194,7 +211,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {loading ? 'MENYEGERAK...' : 'FORCE SYNC'}
+            {loading ? 'SYNCING...' : 'REFRESH VAULT'}
           </button>
         </header>
 
