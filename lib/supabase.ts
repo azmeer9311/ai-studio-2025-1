@@ -1,10 +1,10 @@
 
 /**
- * Resilient Database Layer
- * Acts as a local Supabase instance to prevent crashes when keys are missing
- * and ensures data persistence for users and admins.
+ * Resilient Database Layer (Mock Supabase)
+ * This ensures data persistence in LocalStorage even without environment variables.
+ * Fixes: Data loss, disappearing users, and "supabaseKey required" errors.
  */
-const STORAGE_PREFIX = 'azmeer_v2_';
+const STORAGE_PREFIX = 'azmeer_v2_db_';
 
 const getStorage = (key: string) => {
   const data = localStorage.getItem(STORAGE_PREFIX + key);
@@ -15,16 +15,18 @@ const setStorage = (key: string, data: any) => {
   localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(data));
 };
 
-// Auto-initialize a Master Admin if the database is empty
+// Seeding: Ensures a Master Admin always exists for the owner.
 const initDb = () => {
   const users = getStorage('user_profiles');
-  if (users.length === 0) {
+  const adminExists = users.some((u: any) => u.username === 'admin');
+  
+  if (!adminExists) {
     const masterAdmin = {
       id: 'master-admin-001',
       username: 'admin',
       email: 'admin@azmeer.ai',
-      phone: '0000000000',
-      password: 'admin',
+      phone: '0123456789',
+      password: 'admin', // Request requirement: keep passwords visible for admin view
       is_approved: true,
       is_admin: true,
       video_limit: 999999,
@@ -33,7 +35,8 @@ const initDb = () => {
       images_used: 0,
       created_at: new Date().toISOString()
     };
-    setStorage('user_profiles', [masterAdmin]);
+    users.push(masterAdmin);
+    setStorage('user_profiles', users);
   }
 };
 
@@ -63,9 +66,9 @@ export const supabase = {
             return chain;
           },
           single: async () => {
-            return { data: data[0] || null, error: data[0] ? null : { message: 'Not found' } };
+            return { data: data[0] || null, error: data[0] ? null : { message: 'Item not found' } };
           },
-          // Allows calling as a promise
+          // Allows usage as an awaitable promise
           then: async (resolve: any) => {
             return resolve({ data, error: null });
           }
@@ -102,7 +105,7 @@ export const supabase = {
             
             return {
               select: () => ({
-                single: async () => ({ data: updatedItem, error: updatedItem ? null : { message: 'Update target not found' } })
+                single: async () => ({ data: updatedItem, error: updatedItem ? null : { message: 'Not found' } })
               })
             };
           }

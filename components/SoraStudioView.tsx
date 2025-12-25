@@ -31,20 +31,20 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
   const isLocked = !userProfile.is_admin && (!userProfile.is_approved || userProfile.video_limit <= 0);
 
-  // Resume tracking on mount if a generation is already happening
+  // Resume tracking logic: If the user refreshes but a job is still processing in the API history
   useEffect(() => {
     const resumeTracking = async () => {
       try {
-        const history = await getAllHistory(1, 10);
-        const items = history?.result || history?.data || [];
-        const processingItem = items.find((i: any) => Number(i.status) === 1);
-        if (processingItem) {
+        const historyData = await getAllHistory(1, 5);
+        const items = historyData?.result || historyData?.data || [];
+        const bakingItem = items.find((i: any) => Number(i.status) === 1);
+        if (bakingItem) {
           setIsGenerating(true);
-          setActiveUuid(processingItem.uuid);
-          pollStatus(processingItem.uuid);
+          setActiveUuid(bakingItem.uuid);
+          pollStatus(bakingItem.uuid);
         }
       } catch (e) {
-        console.error("Resume tracking failed:", e);
+        console.error("Tracking recovery failed:", e);
       }
     };
     resumeTracking();
@@ -79,16 +79,16 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
       if (data) {
         const currentStatus = Number(data.status);
         
-        // Accurate progress detection
+        // Dynamic progress calculation
         const currentProgress = Number(data.status_percentage) || 
                                Number(data.progress) || 
                                Number(data.percent) || 
                                Number(data.percentage) || 
-                               (currentStatus === 1 ? Math.min(98, progress + 0.5) : 0);
+                               (currentStatus === 1 ? Math.min(99, progress + 1) : 0);
         
         setProgress(Math.floor(currentProgress));
 
-        // BROADCAST: Sync Vault
+        // BROADCAST: Let the Vault (HistoryView) know it's time to refresh its data
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
 
         if (currentStatus === 1) {
@@ -117,11 +117,12 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
         } else if (currentStatus === 3) {
           setIsGenerating(false);
           setActiveUuid(null);
-          alert("Render gagal. Sila cuba lagi.");
+          alert("Render video hampa gagal. Sila cuba lagi.");
           window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         }
       }
     } catch (e) {
+      // Retry polling on error
       pollingRef.current = window.setTimeout(() => pollStatus(uuid), 5000);
     }
   };
@@ -148,10 +149,11 @@ const SoraStudioView: React.FC<SoraStudioViewProps> = ({ onViewChange, userProfi
 
       if (uuid) {
         setActiveUuid(uuid);
+        // Force an immediate history refresh
         window.dispatchEvent(new CustomEvent('sync_vault_signal'));
         pollStatus(uuid);
       } else {
-        alert("Gagal memulakan proses. Server busy.");
+        alert("Gagal memulakan enjin Sora. Sila cuba sekejap lagi.");
         setIsGenerating(false);
       }
     } catch (error: any) {

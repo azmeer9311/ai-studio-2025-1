@@ -61,8 +61,9 @@ export const logoutLocal = () => {
 export const getCurrentSession = (): UserProfile | null => {
   const session = localStorage.getItem(SESSION_KEY);
   if (!session) return null;
-  const profile = JSON.parse(session);
-  return profile;
+  // Note: We parse the session, but it might be stale. 
+  // Components should call getProfile(profile.id) for the absolute truth.
+  return JSON.parse(session);
 };
 
 export const getProfile = async (userId: string): Promise<UserProfile | null> => {
@@ -78,7 +79,8 @@ export const updateUsage = async (userId: string, type: 'video' | 'image') => {
   const current = await getProfile(userId);
   if (!current) return;
 
-  // Admin remains unlimited
+  // Master admins ignore usage tracking if they want, but we keep logs.
+  // We only increment if they aren't unlimited (admin).
   if (current.is_admin) return;
 
   const updates = type === 'video' 
@@ -101,9 +103,10 @@ export const canGenerate = async (userId: string, type: 'video' | 'image'): Prom
   const user = await getProfile(userId);
   if (!user) return false;
   
-  // FIXED: Admin MUST be unlimited
+  // FIX: Master Admin has unlimited power.
   if (user.is_admin) return true;
   
+  // Normal users must be approved.
   if (!user.is_approved) return false;
   
   if (type === 'video') return user.videos_used < user.video_limit;
@@ -121,7 +124,7 @@ export const getAllProfiles = async (): Promise<UserProfile[]> => {
 export const updateProfileAdmin = async (userId: string, updates: Partial<UserProfile>) => {
   const { data } = await supabase.from('user_profiles').update(updates).eq('id', userId).select().single();
   
-  // If we updated the currently logged in admin, update their session too
+  // Sync the local session if the logged-in user was updated
   const session = getCurrentSession();
   if (session && session.id === userId && data) {
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));

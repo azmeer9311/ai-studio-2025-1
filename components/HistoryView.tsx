@@ -52,7 +52,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
       const items = response?.result || response?.data || (Array.isArray(response) ? response : []);
       
       if (Array.isArray(items)) {
-        // Capture Sora/Video items correctly
+        // Broad capture of all Sora 2.0 and Video tasks
         const filteredItems = items.filter((item: any) => {
           const type = (item.type || '').toLowerCase();
           const model = (item.model_name || '').toLowerCase();
@@ -62,13 +62,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
         
         setHistory(filteredItems);
 
-        // SYNC: Auto-poll if any generation is active (Status 1)
+        // SYNC MECHANISM: Auto-poll aggressively if any video is "BAKING" (Status 1)
         const hasActiveTasks = filteredItems.some(item => Number(item.status) === 1);
         
         if (pollingTimerRef.current) window.clearTimeout(pollingTimerRef.current);
         
         if (hasActiveTasks) {
-          // Poll every 2 seconds for high-fidelity updates
+          // Poll every 2 seconds for a high-sync experience
           pollingTimerRef.current = window.setTimeout(() => fetchHistory(false), 2000);
         }
       } else {
@@ -85,10 +85,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
   useEffect(() => {
     fetchHistory(true);
     
-    // Background sync safety
+    // Safety periodic sync every 20 seconds regardless of status
     const backgroundInterval = setInterval(() => fetchHistory(false), 20000);
     
-    // Global Event Listener for real-time refresh signal from Studio
+    // LISTEN for signals from the Studio View
     const handleSync = () => fetchHistory(false);
     window.addEventListener('sync_vault_signal', handleSync);
     
@@ -149,10 +149,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
           window.URL.revokeObjectURL(blobUrl);
         }, 100);
       } else {
-        alert("Video belum sedia.");
+        alert("Video belum tersedia untuk dimuat turun.");
       }
     } catch (e: any) {
-      alert(`Ralat muat turun.`);
+      alert(`Ralat muat turun. Sila cuba lagi sekejap lagi.`);
     } finally {
       setIsProcessing(prev => ({ ...prev, [uuid]: false }));
     }
@@ -243,14 +243,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ userProfile }) => {
                       <div className="text-[8px] md:text-[9px] text-slate-600 font-bold">{new Date(item.created_at).toLocaleDateString()}</div>
                     </div>
                     <p className="text-slate-300 text-[10px] md:text-xs font-medium leading-relaxed line-clamp-3 mb-5 md:mb-6 flex-1 italic">
-                      "{item.input_text || 'Tiada prompt.'}"
+                      "{item.input_text || 'Tiada prompt direkodkan.'}"
                     </p>
                     <div className="pt-4 border-t border-slate-800/40 flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-[8px] md:text-[9px] font-black uppercase text-slate-500 tracking-widest">{item.status_desc}</span>
                         <span className="text-[7px] text-slate-700 font-bold uppercase">{item.model_name}</span>
                       </div>
-                      <button onClick={() => handleDownload(item)} disabled={processing || status !== 2} className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all">
+                      <button onClick={() => handleDownload(item)} disabled={processing || status !== 2} className="p-2 md:p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all shadow-sm">
                          <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       </button>
                     </div>
